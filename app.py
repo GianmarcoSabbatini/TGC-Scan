@@ -80,7 +80,7 @@ class PriceUpdateScheduler:
             try:
                 logger.info("Starting scheduled price update...")
                 stats = price_tracker.update_all_prices()
-                self.last_update = datetime.utcnow()
+                self.last_update = datetime.now(datetime.UTC) if hasattr(datetime, 'UTC') else datetime.utcnow()
                 
                 # Notify connected clients
                 socketio.emit('prices_updated', {
@@ -107,8 +107,119 @@ class PriceUpdateScheduler:
             'last_update': self.last_update.isoformat() if self.last_update else None
         }
 
-# Initialize and start the price scheduler
+
+class HashDownloadWorker:
+    """Background worker to download and compute image hashes for cards"""
+    
+    def __init__(self):
+        self.running = False
+        self.thread = None
+        self.progress = {'total': 0, 'processed': 0, 'current_card': None}
+        self.last_run = None
+        logger.info("HashDownloadWorker initialized")
+    
+    def start(self, set_code: str = None):
+        """Start downloading hashes in background"""
+        if self.running:
+            logger.warning("Hash download already running")
+            return False
+        
+        self.running = True
+        self.progress = {'total': 0, 'processed': 0, 'current_card': None, 'set_code': set_code}
+        self.thread = threading.Thread(target=self._run, args=(set_code,), daemon=True)
+        self.thread.start()
+        logger.info(f"Hash download worker started | set_code={set_code}")
+        return True
+    
+    def stop(self):
+        """Stop the background thread"""
+        self.running = False
+        if self.thread:
+            self.thread.join(timeout=5)
+        logger.info("Hash download worker stopped")
+    
+    def _run(self, set_code: str = None):
+        """Background thread to download hashes"""
+        db = get_db()
+        try:
+            # Get cards without hash
+            query = db.query(Card).filter(Card.image_hash == None)
+            if set_code:
+                query = query.filter(Card.set_code == set_code.lower())
+            
+            cards = query.all()
+            self.progress['total'] = len(cards)
+            
+            logger.info(f"Hash download: Processing {len(cards)} cards without hash")
+            
+            # Emit start event
+            socketio.emit('hash_download_started', {
+                'total': len(cards),
+                'set_code': set_code
+            })
+            
+            for idx, card in enumerate(cards):
+                if not self.running:
+                    logger.info("Hash download stopped by user")
+                    break
+                
+                try:
+                    # Download and hash image
+                    card_data = {'image_url': card.image_url}
+                    image_hash = download_and_hash_card_image(card_data)
+                    
+                    if image_hash:
+                        card.image_hash = image_hash
+                        db.commit()
+                    
+                    self.progress['processed'] = idx + 1
+                    self.progress['current_card'] = card.name
+                    
+                    # Emit progress every 10 cards
+                    if (idx + 1) % 10 == 0 or idx == len(cards) - 1:
+                        socketio.emit('hash_download_progress', {
+                            'processed': idx + 1,
+                            'total': len(cards),
+                            'percent': round((idx + 1) / len(cards) * 100, 1),
+                            'current_card': card.name
+                        })
+                        logger.debug(f"Hash download progress: {idx + 1}/{len(cards)}")
+                    
+                    # Rate limit: ~100ms delay between downloads
+                    time.sleep(0.1)
+                    
+                except Exception as e:
+                    logger.error(f"Error hashing card {card.name}: {e}")
+                    continue
+            
+            self.last_run = datetime.now()
+            logger.info(f"Hash download complete | processed={self.progress['processed']}/{self.progress['total']}")
+            
+            # Emit completion
+            socketio.emit('hash_download_complete', {
+                'processed': self.progress['processed'],
+                'total': self.progress['total']
+            })
+            
+        except Exception as e:
+            logger.error(f"Hash download error: {e}", exc_info=True)
+            socketio.emit('hash_download_error', {'error': str(e)})
+        finally:
+            db.close()
+            self.running = False
+    
+    def get_status(self):
+        """Get worker status"""
+        return {
+            'running': self.running,
+            'progress': self.progress,
+            'last_run': self.last_run.isoformat() if self.last_run else None
+        }
+
+
+# Initialize workers
 price_scheduler = PriceUpdateScheduler(interval_hours=6)
+hash_worker = HashDownloadWorker()
 
 def allowed_file(filename):
     """Check if file extension is allowed"""
@@ -146,19 +257,52 @@ def upload_scan():
         file.save(filepath)
         logger.debug(f"File saved | path={filepath}")
         
-        # Get TCG from request
-        tcg = request.form.get('tcg', 'mtg')
-        
-        # Recognize card
+        # Recognize card (MTG only - tcg parameter no longer needed)
         with PerformanceLogger("card_recognition"):
-            result = recognition_engine.recognize_card(filepath, tcg)
+            result = recognition_engine.recognize_card(filepath)
         
         if result['success']:
             # Save to database
             db = get_db()
             try:
+                # Get card info from recognition result
+                card_info = result.get('card', {})
+                scryfall_id = card_info.get('id') or card_info.get('card_id') or card_info.get('scryfall_id')
+                
+                # Find or create the Card in the database
+                existing_card = db.query(Card).filter(Card.card_id == scryfall_id).first()
+                
+                if not existing_card:
+                    # Create new Card record
+                    colors = card_info.get('colors', [])
+                    if isinstance(colors, list):
+                        colors = ','.join(colors)
+                    
+                    existing_card = Card(
+                        tcg='mtg',  # Magic: The Gathering
+                        card_id=scryfall_id,
+                        name=card_info.get('name', 'Unknown'),
+                        set_code=card_info.get('set_code', ''),
+                        set_name=card_info.get('set_name', ''),
+                        collector_number=card_info.get('collector_number', ''),
+                        rarity=card_info.get('rarity', ''),
+                        card_type=card_info.get('type_line', card_info.get('card_type', '')),
+                        colors=colors,
+                        mana_cost=card_info.get('mana_cost', ''),
+                        image_url=card_info.get('image_url', ''),
+                        oracle_text=card_info.get('oracle_text', ''),
+                        artist=card_info.get('artist', ''),
+                        language=card_info.get('language', 'en')
+                    )
+                    db.add(existing_card)
+                    db.commit()
+                    logger.info(f"Created new Card record | name={existing_card.name} | id={existing_card.id}")
+                
+                # Use the database Card ID (integer) for ScannedCard
+                card_db_id = existing_card.id
+                
                 scanned_card = ScannedCard(
-                    card_id=result['card']['id'],
+                    card_id=card_db_id,
                     confidence_score=result['confidence'],
                     image_path=filepath,
                     is_foil=request.form.get('is_foil', 'false').lower() == 'true'
@@ -167,9 +311,6 @@ def upload_scan():
                 db.commit()
                 
                 # Save price history if available
-                card_info = result.get('card', {})
-                card_db_id = result['card']['id']
-                
                 if card_info.get('price_eur'):
                     try:
                         price_record = PriceHistory(
@@ -199,7 +340,8 @@ def upload_scan():
                         logger.warning(f"Could not save USD price: {e}")
                 
                 result['scanned_id'] = scanned_card.id
-                logger.info(f"Card scanned successfully | card={result['card']['name']} | scanned_id={scanned_card.id}")
+                result['card']['db_id'] = card_db_id  # Add database ID to response
+                logger.info(f"Card scanned successfully | card={result['card']['name']} | scanned_id={scanned_card.id} | card_db_id={card_db_id}")
                 
                 # Emit real-time update
                 socketio.emit('card_scanned', {
@@ -467,14 +609,22 @@ def bulk_import_cards():
     data = request.json
     tcg = data.get('tcg', 'mtg')
     set_code = data.get('set_code')
+    skip_hash = data.get('skip_hash', True)  # Skip image hash by default for speed
     
-    logger.info(f"Bulk import request | set_code={set_code} | tcg={tcg}")
+    logger.info(f"Bulk import request | set_code={set_code} | tcg={tcg} | skip_hash={skip_hash}")
     
     if not set_code:
         logger.warning("Bulk import: No set code provided")
         return jsonify({'error': 'Set code required'}), 400
     
     try:
+        # Get total card count first for progress tracking
+        total_cards = api_manager.scryfall.get_set_card_count(set_code.lower())
+        if total_cards == 0:
+            return jsonify({'error': f'Set not found: {set_code}'}), 404
+        
+        logger.info(f"Bulk import: Set {set_code} has {total_cards} cards")
+        
         # Search for all cards in set
         if tcg == 'mtg':
             with PerformanceLogger(f"bulk_api_search_{set_code}"):
@@ -486,20 +636,31 @@ def bulk_import_cards():
         db = get_db()
         imported = 0
         skipped = 0
+        total = len(cards_data)
+        batch_size = 50  # Commit every 50 cards for safety
         
         try:
-            for card_data in cards_data:
+            for idx, card_data in enumerate(cards_data):
                 # Check if exists
                 existing = db.query(Card).filter(Card.card_id == card_data['card_id']).first()
                 
                 if existing:
                     skipped += 1
+                    # Emit progress for skipped cards too
+                    socketio.emit('import_progress', {
+                        'imported': imported,
+                        'skipped': skipped,
+                        'total': total,
+                        'current_card': card_data.get('name', 'Unknown')
+                    })
                     continue
                 
-                # Download and hash image
-                image_hash = download_and_hash_card_image(card_data)
-                if image_hash:
-                    card_data['image_hash'] = image_hash
+                # Skip image hash download for speed (can be done later in background)
+                # This makes bulk import ~10x faster
+                if not skip_hash:
+                    image_hash = download_and_hash_card_image(card_data)
+                    if image_hash:
+                        card_data['image_hash'] = image_hash
                 
                 # Save card name before removing price fields
                 card_name = card_data.get('name', 'Unknown')
@@ -514,20 +675,34 @@ def bulk_import_cards():
                 db.add(card)
                 imported += 1
                 
-                # Emit progress
+                # Commit in batches for safety
+                if imported % batch_size == 0:
+                    db.commit()
+                    logger.debug(f"Batch commit | imported={imported}")
+                
+                # Emit progress with total
                 socketio.emit('import_progress', {
                     'imported': imported,
                     'skipped': skipped,
+                    'total': total,
                     'current_card': card_name
                 })
             
+            # Final commit
             db.commit()
             logger.info(f"Bulk import completed | set={set_code} | imported={imported} | skipped={skipped}")
             
+            # Start background hash download if cards were imported
+            if imported > 0:
+                hash_worker.start(set_code)
+                logger.info(f"Started background hash download for set {set_code}")
+            
             return jsonify({
-                'message': 'Bulk import completed',
+                'message': f'Bulk import completed for set {set_code.upper()}. Hash download started in background.',
                 'imported': imported,
-                'skipped': skipped
+                'skipped': skipped,
+                'total': total,
+                'hash_download_started': imported > 0
             })
             
         finally:
@@ -870,6 +1045,48 @@ def stop_scheduler():
     """Stop the price update scheduler"""
     price_scheduler.stop()
     return jsonify({'message': 'Scheduler stopped', 'status': price_scheduler.get_status()})
+
+# ============================================================================
+# HASH DOWNLOAD ENDPOINTS
+# ============================================================================
+
+@app.route('/api/hash/status', methods=['GET'])
+def get_hash_status():
+    """Get hash download worker status"""
+    return jsonify(hash_worker.get_status())
+
+@app.route('/api/hash/start', methods=['POST'])
+def start_hash_download():
+    """Start hash download for cards without hash"""
+    data = request.json or {}
+    set_code = data.get('set_code')
+    
+    if hash_worker.start(set_code):
+        return jsonify({'message': 'Hash download started', 'status': hash_worker.get_status()})
+    else:
+        return jsonify({'error': 'Hash download already running', 'status': hash_worker.get_status()}), 400
+
+@app.route('/api/hash/stop', methods=['POST'])
+def stop_hash_download():
+    """Stop hash download"""
+    hash_worker.stop()
+    return jsonify({'message': 'Hash download stopped', 'status': hash_worker.get_status()})
+
+@app.route('/api/hash/pending', methods=['GET'])
+def get_pending_hashes():
+    """Get count of cards without image hash"""
+    set_code = request.args.get('set_code')
+    
+    db = get_db()
+    try:
+        query = db.query(Card).filter(Card.image_hash == None)
+        if set_code:
+            query = query.filter(Card.set_code == set_code.lower())
+        
+        count = query.count()
+        return jsonify({'pending': count, 'set_code': set_code})
+    finally:
+        db.close()
 
 @app.route('/api/prices/trending', methods=['GET'])
 def get_trending_cards():

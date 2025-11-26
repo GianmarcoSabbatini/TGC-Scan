@@ -23,6 +23,9 @@ try:
         r'C:\Program Files\Tesseract-OCR\tesseract.exe',
         r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe',
         r'C:\Users\Utente\AppData\Local\Programs\Tesseract-OCR\tesseract.exe',
+        r'C:\Users\Gianmarco\AppData\Local\Programs\Tesseract-OCR\tesseract.exe',
+        os.path.expandvars(r'%LOCALAPPDATA%\Programs\Tesseract-OCR\tesseract.exe'),
+        os.path.expandvars(r'%PROGRAMFILES%\Tesseract-OCR\tesseract.exe'),
     ]
     
     # Try to find tesseract
@@ -30,17 +33,21 @@ try:
     if tesseract_found:
         pytesseract.pytesseract.tesseract_cmd = tesseract_found
         TESSERACT_AVAILABLE = True
+        print(f"[OCR] Tesseract found via PATH: {tesseract_found}")
     else:
         for path in tesseract_paths:
             if os.path.exists(path):
                 pytesseract.pytesseract.tesseract_cmd = path
                 TESSERACT_AVAILABLE = True
+                print(f"[OCR] Tesseract found at: {path}")
                 break
         else:
             TESSERACT_AVAILABLE = False
+            print("[OCR] Tesseract NOT found - OCR disabled")
             
 except ImportError:
     TESSERACT_AVAILABLE = False
+    print("[OCR] pytesseract not installed - OCR disabled")
 
 # Initialize logger for this module
 logger = get_logger('recognition')
@@ -55,12 +62,15 @@ class CardRecognitionEngine:
         self.scryfall_api = ScryfallAPI()
         logger.info("CardRecognitionEngine initialized")
         
-    def preprocess_image(self, image_path: str) -> Tuple[np.ndarray, Image.Image]:
+    def preprocess_image(self, image_path: str) -> Tuple[np.ndarray, Image.Image, np.ndarray]:
         """
         Preprocess scanned card image
         - Auto-rotate if needed
         - Crop to card boundaries
         - Enhance contrast
+        
+        Returns:
+            Tuple of (processed_image, pil_image, original_image)
         """
         logger.debug(f"Preprocessing image: {image_path}")
         
@@ -69,6 +79,9 @@ class CardRecognitionEngine:
         if img is None:
             logger.error(f"Could not load image: {image_path}")
             raise ValueError(f"Could not load image: {image_path}")
+        
+        # Keep a copy of the original before any processing
+        original_img = img.copy()
         
         logger.debug(f"Original image size: {img.shape}")
         
@@ -135,7 +148,7 @@ class CardRecognitionEngine:
         # Convert to PIL Image for hashing
         pil_img = Image.fromarray(cv2.cvtColor(enhanced, cv2.COLOR_BGR2RGB))
         
-        return enhanced, pil_img
+        return enhanced, pil_img, original_img
     
     def extract_card_name_region(self, image: np.ndarray) -> np.ndarray:
         """
@@ -192,6 +205,238 @@ class CardRecognitionEngine:
         gray = cv2.GaussianBlur(gray, (3, 3), 0)
         
         return gray
+    
+    def extract_set_info_from_full_image(self, image: np.ndarray) -> Dict[str, str]:
+        """
+        Extract set code and collector number from the bottom-left corner of the card.
+        
+        The set info on MTG cards appears in a very specific location:
+        - Bottom 5-8% of the card height
+        - Left 50% of the card width
+        - Format: "U 0167" on line 1, "FIN · EN" on line 2
+        
+        We scan a small region and look for patterns like:
+        - 3-4 digit numbers (collector number)
+        - Known 3-letter set codes near the number
+        """
+        if not TESSERACT_AVAILABLE:
+            logger.warning("Tesseract not available for set info extraction")
+            return {'set_code': None, 'collector_number': None}
+        
+        h, w = image.shape[:2]
+        
+        # Save debug image
+        debug_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads', 'debug')
+        os.makedirs(debug_dir, exist_ok=True)
+        
+        # Known MTG set codes (most common/recent ones)
+        known_sets = {
+            'FIN', 'MKM', 'WOE', 'LCI', 'MOM', 'ONE', 'BRO', 'DMU', 'SNC', 'NEO',
+            'VOW', 'MID', 'AFR', 'STX', 'KHM', 'ZNR', 'IKO', 'THB', 'ELD', 'WAR',
+            'RNA', 'GRN', 'DOM', 'RIX', 'XLN', 'HOU', 'AKH', 'AER', 'KLD', 'EMN',
+            'SOI', 'OGW', 'BFZ', 'DTK', 'FRF', 'KTK', 'M21', 'M20', 'M19', 'M15',
+            'DSK', 'BLB', 'OTJ', 'MKC', 'CLU', 'PIP', 'ACR', 'WHO', 'LTR', 'CMM',
+            'WOT', '2X2', 'CLB', 'NCC', 'SLD', 'J22', 'UNF', 'DMC', 'MUL', 'BRC',
+            'BOT', 'BRR', 'ONC', 'MOM', 'MAT', 'MUL', 'LCC', 'RVR', 'SPG', 'PIO',
+            'FDN', 'DSC', 'MH3', 'MH2', 'MH1', '40K', 'REX', '30A'
+        }
+        
+        best_result = {'set_code': None, 'collector_number': None}
+        
+        # Strategy 1: Scan very bottom strip (last 8% of image, left 60%)
+        # This is where the set info line appears
+        bottom_strip = image[int(h * 0.92):, :int(w * 0.6)]
+        logger.debug(f"Set info: scanning bottom strip | size={bottom_strip.shape[1]}x{bottom_strip.shape[0]}")
+        cv2.imwrite(os.path.join(debug_dir, 'set_info_strip.png'), bottom_strip)
+        
+        # Strategy 2: Also scan a slightly larger region (last 12%)
+        bottom_region = image[int(h * 0.88):, :int(w * 0.6)]
+        cv2.imwrite(os.path.join(debug_dir, 'set_info_region.png'), bottom_region)
+        
+        # Try both regions
+        regions_to_try = [
+            ('strip', bottom_strip),
+            ('region', bottom_region),
+        ]
+        
+        for region_name, region in regions_to_try:
+            if region.shape[0] < 10 or region.shape[1] < 10:
+                continue
+                
+            # Convert to grayscale
+            gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
+            
+            # Apply threshold to handle both light and dark text
+            _, thresh_light = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY)
+            _, thresh_dark = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY_INV)
+            
+            # Also try adaptive threshold
+            adaptive = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                                            cv2.THRESH_BINARY, 11, 2)
+            
+            images_to_try = [
+                ('gray', gray),
+                ('inverted', cv2.bitwise_not(gray)),
+                ('thresh_light', thresh_light),
+                ('thresh_dark', thresh_dark),
+                ('adaptive', adaptive),
+            ]
+            
+            for img_name, img in images_to_try:
+                # Scale up for better OCR (small text needs enlargement)
+                scale = 3.0
+                scaled = cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+                
+                # Try OCR with different configs
+                for psm in [7, 6, 13]:  # 7=single line, 6=block, 13=raw line
+                    try:
+                        pil_img = Image.fromarray(scaled)
+                        config = f'--oem 3 --psm {psm}'
+                        text = pytesseract.image_to_string(pil_img, config=config)
+                        text = text.strip().upper()
+                        
+                        if not text or len(text) < 3:
+                            continue
+                        
+                        logger.debug(f"Set OCR ({region_name}, {img_name}, PSM {psm}): '{text}'")
+                        
+                        # Pattern 1: Look for "NUMBER SET" format like "0167 FIN" or "167 FIN"
+                        # The number and set code should be close together
+                        combined_pattern = r'0?(\d{1,4})\s*[/·\-]?\s*([A-Z]{3})'
+                        match = re.search(combined_pattern, text)
+                        if match:
+                            num = match.group(1).lstrip('0') or '0'
+                            potential_set = match.group(2)
+                            if potential_set in known_sets and 1 <= int(num) <= 999:
+                                best_result['collector_number'] = num
+                                best_result['set_code'] = potential_set.lower()
+                                logger.info(f"Found combined pattern: {num} {potential_set}")
+                                return best_result
+                        
+                        # Pattern 2: "SET" format like "FIN · EN" or just "FIN"
+                        for set_code in known_sets:
+                            # Look for set code with word boundary or separator
+                            set_pattern = rf'\b{set_code}\b|{set_code}\s*[·\-]'
+                            if re.search(set_pattern, text):
+                                if not best_result['set_code']:
+                                    best_result['set_code'] = set_code.lower()
+                                    logger.info(f"Found set code: {set_code}")
+                        
+                        # Pattern 3: Look for collector number patterns
+                        # "U 0167", "C 234", "R 089", or just "0167", "234"
+                        num_patterns = [
+                            r'[UCRMLS]\s*0?(\d{1,4})\b',     # U 167, C 234, R 089
+                            r'\b0?(\d{3})\b',                # 167, 0167 (exactly 3-4 digits)
+                            r'(\d{1,4})\s*/\s*\d+',          # 167/264 format
+                        ]
+                        
+                        for pattern in num_patterns:
+                            match = re.search(pattern, text)
+                            if match and not best_result['collector_number']:
+                                num = match.group(1).lstrip('0') or '0'
+                                if 1 <= int(num) <= 999:
+                                    best_result['collector_number'] = num
+                                    logger.info(f"Found collector number: {num}")
+                                    break
+                        
+                        # If we found both, return immediately
+                        if best_result['set_code'] and best_result['collector_number']:
+                            logger.info(f"Set info found: set={best_result['set_code']}, number={best_result['collector_number']}")
+                            return best_result
+                            
+                    except Exception as e:
+                        logger.debug(f"OCR attempt failed ({region_name}, {img_name}, PSM {psm}): {e}")
+                        continue
+        
+        logger.info(f"Set info extraction result: set={best_result.get('set_code')}, number={best_result.get('collector_number')}")
+        return best_result
+    
+    def extract_set_info_ocr(self, image_normal: np.ndarray, image_inverted: np.ndarray) -> Dict[str, str]:
+        """
+        Extract set code and collector number from the set info region.
+        Tries both normal and inverted versions to handle light-on-dark text.
+        
+        Card format (2 lines):
+        Line 1: "U 0167" or "R 123" (rarity + number)
+        Line 2: "FIN · EN" or "SET - EN" (set code + language)
+        
+        Returns dict with 'set_code' and 'collector_number'.
+        """
+        if not TESSERACT_AVAILABLE:
+            logger.warning("Tesseract not available for set info extraction")
+            return {'set_code': None, 'collector_number': None}
+        
+        # PSM modes to try:
+        # 6 = Assume a single uniform block of text (good for 2 lines)
+        # 4 = Assume a single column of text of variable sizes
+        psm_modes = [6, 4, 7]
+        
+        # Try both images
+        images_to_try = [
+            ('inverted', image_inverted),
+            ('normal', image_normal)
+        ]
+        
+        best_result = {'set_code': None, 'collector_number': None, 'raw_text': ''}
+        
+        for img_name, img in images_to_try:
+            for psm in psm_modes:
+                try:
+                    pil_img = Image.fromarray(img)
+                    
+                    # Allow all alphanumeric + common separators
+                    config = f'--oem 3 --psm {psm} -l eng -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789·.- '
+                    text = pytesseract.image_to_string(pil_img, config=config)
+                    text = text.strip()
+                    
+                    if text:
+                        logger.info(f"Set info OCR ({img_name}, PSM {psm}): '{text}'")
+                        
+                        set_code = None
+                        collector_number = None
+                        
+                        # Parse the text looking for patterns
+                        lines = text.replace('\n', ' ').split()
+                        full_text = ' '.join(lines).upper()
+                        
+                        # Pattern 1: Look for 3-letter set codes (FIN, MKM, etc.)
+                        set_match = re.search(r'\b([A-Z]{3})\b', full_text)
+                        if set_match:
+                            potential_set = set_match.group(1)
+                            # Exclude common false positives like language codes
+                            if potential_set not in ['THE', 'AND', 'FOR']:
+                                set_code = potential_set.lower()
+                        
+                        # Pattern 2: Look for collector number (0167, 167, etc.)
+                        # Usually 3-4 digits, may have leading zero
+                        num_match = re.search(r'\b0?(\d{2,4})\b', full_text)
+                        if num_match:
+                            collector_number = num_match.group(1).lstrip('0') or '0'
+                        
+                        # If we found both, return immediately
+                        if set_code and collector_number:
+                            logger.info(f"Set info parsed: set={set_code}, number={collector_number}")
+                            return {
+                                'set_code': set_code,
+                                'collector_number': collector_number,
+                                'raw_text': text
+                            }
+                        
+                        # Keep best partial result
+                        if (set_code or collector_number) and not best_result['set_code']:
+                            best_result = {
+                                'set_code': set_code,
+                                'collector_number': collector_number,
+                                'raw_text': text
+                            }
+                            
+                except Exception as e:
+                    logger.debug(f"OCR attempt failed ({img_name}, PSM {psm}): {e}")
+                    continue
+        
+        logger.info(f"Set info OCR raw text: '{best_result.get('raw_text', '')}'")
+        logger.info(f"Set info parsed: set={best_result.get('set_code')}, number={best_result.get('collector_number')}")
+        return best_result
     
     def extract_text_ocr(self, image: np.ndarray) -> str:
         """Extract text from image using Tesseract OCR"""
@@ -414,15 +659,18 @@ class CardRecognitionEngine:
     def recognize_card(self, image_path: str) -> Dict:
         """
         Main recognition pipeline for Magic: The Gathering cards:
-        1. OCR + Scryfall API search (best for mobile photos)
-        2. Hash matching against local database
+        1. Try OCR for set code + collector number (most accurate)
+        2. Try OCR for card name + API search
+        3. Hash matching against local database
         """
         logger.info(f"Starting card recognition | path={image_path}")
+        extracted_name = None  # Track extracted name for error feedback
+        set_info = None  # Track set info for better matching
         
         try:
             with PerformanceLogger("recognize_card"):
-                # Preprocess image
-                processed_img, pil_img = self.preprocess_image(image_path)
+                # Preprocess image - now also returns original for set info extraction
+                processed_img, pil_img, original_img = self.preprocess_image(image_path)
                 
                 # Save debug images
                 debug_dir = os.path.join(os.path.dirname(image_path), 'debug')
@@ -432,10 +680,51 @@ class CardRecognitionEngine:
                 cv2.imwrite(debug_processed, processed_img)
                 logger.info(f"Saved processed card: {debug_processed} | shape={processed_img.shape}")
                 
-                # Method 1: Try OCR + API search first
+                # Also save the original for debug
+                debug_original = os.path.join(debug_dir, 'original_card.png')
+                cv2.imwrite(debug_original, original_img)
+                logger.info(f"Saved original card: {debug_original} | shape={original_img.shape}")
+                
+                # Method 1: Try OCR + API search
                 if TESSERACT_AVAILABLE:
-                    logger.debug("Trying OCR recognition...")
+                    logger.info("OCR available - trying text recognition...")
                     
+                    # ===== STEP 1: Extract SET CODE and COLLECTOR NUMBER =====
+                    # NEW APPROACH: Scan bottom portion of image for known patterns
+                    logger.info("=== STEP 1: Trying SET CODE + COLLECTOR NUMBER extraction ===")
+                    try:
+                        set_info = self.extract_set_info_from_full_image(processed_img)
+                        logger.info(f"Set info result: set_code={set_info.get('set_code')}, collector_number={set_info.get('collector_number')}")
+                        
+                        # If we have both set code and collector number, search directly!
+                        if set_info.get('set_code') and set_info.get('collector_number'):
+                            logger.info(f"Trying precise search: set={set_info['set_code']}, number={set_info['collector_number']}")
+                            
+                            # Use Scryfall API to get exact card
+                            card_data = self.scryfall_api.get_card_by_set_and_number(
+                                set_info['set_code'], 
+                                set_info['collector_number']
+                            )
+                            
+                            if card_data:
+                                logger.info(f"EXACT MATCH via set+number: {card_data.get('name')}")
+                                return {
+                                    'success': True,
+                                    'card': card_data,
+                                    'confidence': 0.98,  # Very high confidence for exact match
+                                    'method': 'set_number',
+                                    'set_code': set_info['set_code'],
+                                    'collector_number': set_info['collector_number'],
+                                    'message': f"Card identified: {card_data.get('name')} ({set_info['set_code'].upper()} #{set_info['collector_number']})"
+                                }
+                            else:
+                                logger.warning(f"Set+number search failed for set={set_info['set_code']}, number={set_info['collector_number']}, falling back to name OCR")
+                        else:
+                            logger.info(f"Set info incomplete (set={set_info.get('set_code')}, num={set_info.get('collector_number')}), trying name OCR...")
+                    except Exception as e:
+                        logger.warning(f"Set info extraction failed: {e}", exc_info=True)
+                    
+                    # ===== STEP 2: Extract CARD NAME =====
                     # First, save the raw name region (before preprocessing) for debug
                     h, w = processed_img.shape[:2]
                     aspect_ratio = w / h
@@ -456,19 +745,43 @@ class CardRecognitionEngine:
                     logger.info(f"Saved name region: {debug_name} | shape={name_region.shape}")
                     
                     extracted_name = self.extract_text_ocr(name_region)
+                    logger.info(f"OCR extracted text: '{extracted_name}'")
                     
                     if extracted_name and len(extracted_name) >= 3:
-                        card_data = self.search_card_by_name(extracted_name)
+                        # If we have a set code but no number, search name within that set
+                        if set_info and set_info.get('set_code'):
+                            card_data = self.search_card_by_name(f"{extracted_name} set:{set_info['set_code']}")
+                            if not card_data:
+                                # Try without set filter
+                                card_data = self.search_card_by_name(extracted_name)
+                        else:
+                            card_data = self.search_card_by_name(extracted_name)
+                        
                         if card_data:
-                            logger.info(f"Recognition via OCR successful: {card_data.get('name')}")
+                            confidence = 0.85
+                            method = 'ocr_api'
+                            
+                            # Boost confidence if set matches
+                            if set_info and set_info.get('set_code'):
+                                card_set = card_data.get('set_code', '').lower()
+                                if card_set == set_info['set_code'].lower():
+                                    confidence = 0.92
+                                    method = 'ocr_set_verified'
+                            
+                            logger.info(f"Recognition via OCR successful: {card_data.get('name')} | confidence={confidence}")
                             return {
                                 'success': True,
                                 'card': card_data,
-                                'confidence': 0.85,
-                                'method': 'ocr_api',
+                                'confidence': confidence,
+                                'method': method,
                                 'extracted_name': extracted_name,
+                                'set_info': set_info,
                                 'message': f"Card recognized: {card_data.get('name')}"
                             }
+                        else:
+                            logger.info(f"OCR found text '{extracted_name}' but no matching card in API")
+                else:
+                    logger.warning("Tesseract OCR not available - skipping text recognition")
                 
                 # Method 2: Direct API search with fuzzy matching
                 # Try searching API directly (Scryfall has good fuzzy matching)
@@ -500,14 +813,21 @@ class CardRecognitionEngine:
                         'message': f'Card recognized: {card.name}'
                     }
                 
-                # No match found
-                logger.info("Recognition complete - no match found")
+                # No match found - include extracted_name if we got one
+                logger.info(f"Recognition complete - no match found | extracted_name={extracted_name}")
+                msg = 'No matching card found.'
+                if extracted_name:
+                    msg = f'Could not match "{extracted_name}". Try searching manually.'
+                else:
+                    msg = 'Could not read card name. Try better lighting or use Search by Name.'
+                    
                 return {
                     'success': False,
                     'card': None,
                     'confidence': 0.0,
                     'image_hash': img_hash if 'img_hash' in dir() else None,
-                    'message': 'No matching card found. Try entering the name manually.'
+                    'extracted_name': extracted_name,
+                    'message': msg
                 }
                 
         except Exception as e:

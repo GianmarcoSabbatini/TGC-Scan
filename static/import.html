@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TCG Scan - Import Cards</title>
+    <title>MTG Scan - Import Cards</title>
     <link rel="stylesheet" href="styles.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
@@ -13,7 +13,7 @@
     <div class="page-wrapper">
         <aside class="sidebar">
             <div class="logo mb-xl">
-                <h2 style="color: var(--primary); font-size: var(--font-size-2xl);">⚡ TCG Scan</h2>
+                <h2 style="color: var(--primary); font-size: var(--font-size-2xl);">⚡ MTG Scan</h2>
                 <p class="text-muted" style="font-size: var(--font-size-sm);">Scan. Sort. Done.</p>
             </div>
             <nav>
@@ -82,6 +82,23 @@
                     </div>
                     <div id="progressText" class="text-center text-muted"></div>
                     <div id="currentCard" class="text-center mt-md" style="color: var(--primary);"></div>
+                </div>
+            </div>
+
+            <!-- Hash Download Progress -->
+            <div id="hashProgressCard" class="card" style="display: none;">
+                <div class="card-header">
+                    <h3 class="card-title">🖼️ Image Hash Download (Background)</h3>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted mb-md">Downloading image hashes for card recognition. This runs in the background.</p>
+                    <div class="progress-bar mb-md">
+                        <div class="progress-fill" id="hashProgress" style="width: 0%; background: var(--info);"></div>
+                    </div>
+                    <div id="hashProgressText" class="text-center text-muted"></div>
+                    <div class="mt-md text-center">
+                        <button class="btn btn-secondary" onclick="stopHashDownload()">Stop Download</button>
+                    </div>
                 </div>
             </div>
 
@@ -188,8 +205,15 @@
         function displayBulkResults(data) {
             const resultsCard = document.getElementById('resultsCard');
             const resultsContainer = document.getElementById('importResults');
+            const progressCard = document.getElementById('progressCard');
 
+            progressCard.style.display = 'none';
             resultsCard.style.display = 'block';
+            
+            // Show hash download card if hash download started
+            if (data.hash_download_started) {
+                document.getElementById('hashProgressCard').style.display = 'block';
+            }
 
             resultsContainer.innerHTML = `
                 <div class="stats-grid">
@@ -201,6 +225,10 @@
                         <div class="stat-value text-muted">${data.skipped}</div>
                         <div class="stat-label">Already Existed</div>
                     </div>
+                    <div class="stat-card">
+                        <div class="stat-value" style="color: var(--primary);">${data.total || (data.imported + data.skipped)}</div>
+                        <div class="stat-label">Total in Set</div>
+                    </div>
                 </div>
                 <div class="mt-lg text-center">
                     <p class="text-success" style="font-size: var(--font-size-lg);">
@@ -209,17 +237,60 @@
                 </div>
             `;
         }
+        
+        async function stopHashDownload() {
+            try {
+                await fetch('/api/hash/stop', { method: 'POST' });
+                document.getElementById('hashProgressCard').style.display = 'none';
+                showNotification('Hash download stopped', 'info');
+            } catch (error) {
+                console.error('Error stopping hash download:', error);
+            }
+        }
 
         // Listen for import progress updates
         if (window.socket) {
             window.socket.on('import_progress', (data) => {
-                const total = data.imported + data.skipped;
                 const progress = document.getElementById('importProgress');
                 const progressText = document.getElementById('progressText');
                 const currentCard = document.getElementById('currentCard');
-
-                progressText.textContent = `Imported: ${data.imported} | Skipped: ${data.skipped}`;
+                
+                // Calculate percentage if total is available
+                const processed = data.imported + data.skipped;
+                if (data.total && data.total > 0) {
+                    const percent = Math.round((processed / data.total) * 100);
+                    progress.style.width = `${percent}%`;
+                    progressText.textContent = `${processed}/${data.total} (${percent}%) - Imported: ${data.imported} | Skipped: ${data.skipped}`;
+                } else {
+                    progressText.textContent = `Imported: ${data.imported} | Skipped: ${data.skipped}`;
+                }
                 currentCard.textContent = `Current: ${data.current_card}`;
+            });
+            
+            // Hash download progress
+            window.socket.on('hash_download_started', (data) => {
+                document.getElementById('hashProgressCard').style.display = 'block';
+                document.getElementById('hashProgressText').textContent = `Starting download for ${data.total} cards...`;
+            });
+            
+            window.socket.on('hash_download_progress', (data) => {
+                const progress = document.getElementById('hashProgress');
+                const progressText = document.getElementById('hashProgressText');
+                
+                progress.style.width = `${data.percent}%`;
+                progressText.textContent = `${data.processed}/${data.total} (${data.percent}%) - Current: ${data.current_card}`;
+            });
+            
+            window.socket.on('hash_download_complete', (data) => {
+                const progressText = document.getElementById('hashProgressText');
+                progressText.textContent = `✓ Complete! ${data.processed}/${data.total} hashes downloaded.`;
+                document.getElementById('hashProgress').style.width = '100%';
+                document.getElementById('hashProgress').style.background = 'var(--success)';
+                showNotification(`Hash download complete: ${data.processed} images processed`, 'success');
+            });
+            
+            window.socket.on('hash_download_error', (data) => {
+                showNotification(`Hash download error: ${data.error}`, 'error');
             });
         }
 

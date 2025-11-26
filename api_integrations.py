@@ -77,26 +77,59 @@ class ScryfallAPI:
             return None
     
     def search_cards(self, query: str, page: int = 1) -> List[Dict]:
-        """Search cards with Scryfall query syntax"""
-        logger.debug(f"Scryfall: Searching cards | query={query} | page={page}")
+        """Search cards with Scryfall query syntax - returns all pages"""
+        logger.debug(f"Scryfall: Searching cards | query={query}")
+        
+        all_cards = []
+        has_more = True
+        current_page = 1
+        
+        while has_more:
+            self.rate_limiter.wait()
+            
+            try:
+                response = requests.get(
+                    f"{self.base_url}/cards/search",
+                    params={'q': query, 'page': current_page},
+                    timeout=30
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    cards = [self._parse_card_data(card) for card in data.get('data', [])]
+                    all_cards.extend(cards)
+                    has_more = data.get('has_more', False)
+                    current_page += 1
+                    logger.debug(f"Scryfall: Page {current_page - 1} fetched | cards_so_far={len(all_cards)}")
+                else:
+                    has_more = False
+            except Exception as e:
+                logger.error(f"Scryfall API error: {e}", exc_info=True)
+                has_more = False
+        
+        logger.info(f"Scryfall: Found {len(all_cards)} total cards for query={query}")
+        return all_cards
+    
+    def get_set_card_count(self, set_code: str) -> int:
+        """Get the total number of cards in a set"""
+        logger.debug(f"Scryfall: Getting set card count | set={set_code}")
         self.rate_limiter.wait()
         
         try:
             response = requests.get(
-                f"{self.base_url}/cards/search",
-                params={'q': query, 'page': page},
-                timeout=30
+                f"{self.base_url}/sets/{set_code}",
+                timeout=10
             )
             
             if response.status_code == 200:
                 data = response.json()
-                cards = [self._parse_card_data(card) for card in data.get('data', [])]
-                logger.info(f"Scryfall: Found {len(cards)} cards for query={query}")
-                return cards
-            return []
+                count = data.get('card_count', 0)
+                logger.info(f"Scryfall: Set {set_code} has {count} cards")
+                return count
+            return 0
         except Exception as e:
             logger.error(f"Scryfall API error: {e}", exc_info=True)
-            return []
+            return 0
     
     def _parse_card_data(self, data: Dict) -> Dict:
         """Parse Scryfall card data to our format"""
@@ -111,7 +144,9 @@ class ScryfallAPI:
         
         return {
             'tcg': 'mtg',
+            'id': data.get('id'),
             'card_id': data.get('id'),
+            'scryfall_id': data.get('id'),
             'name': data.get('name'),
             'set_code': data.get('set'),
             'set_name': data.get('set_name'),
