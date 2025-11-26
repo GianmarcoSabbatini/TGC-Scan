@@ -51,10 +51,8 @@ class CardRecognitionEngine:
     def __init__(self):
         self.hash_threshold = config.RECOGNITION_CONFIDENCE_THRESHOLD
         # Import API integrations
-        from api_integrations import ScryfallAPI, PokemonTCGAPI, YuGiOhAPI
+        from api_integrations import ScryfallAPI
         self.scryfall_api = ScryfallAPI()
-        self.pokemon_api = PokemonTCGAPI()
-        self.yugioh_api = YuGiOhAPI()
         logger.info("CardRecognitionEngine initialized")
         
     def preprocess_image(self, image_path: str) -> Tuple[np.ndarray, Image.Image]:
@@ -246,25 +244,18 @@ class CardRecognitionEngine:
             logger.error(f"OCR error: {e}")
             return ""
     
-    def search_card_by_name(self, card_name: str, tcg: str = 'mtg') -> Optional[Dict]:
+    def search_card_by_name(self, card_name: str) -> Optional[Dict]:
         """
-        Search for a card by name using the appropriate API.
+        Search for a Magic: The Gathering card by name using Scryfall API.
         Returns card data dict or None.
         """
         if not card_name or len(card_name) < 2:
             return None
         
-        logger.debug(f"Searching card by name: '{card_name}' | tcg={tcg}")
+        logger.debug(f"Searching card by name: '{card_name}'")
         
         try:
-            if tcg == 'mtg':
-                result = self.scryfall_api.search_card_by_name(card_name)
-            elif tcg == 'pokemon':
-                result = self.pokemon_api.search_card_by_name(card_name)
-            elif tcg == 'yugioh':
-                result = self.yugioh_api.search_card_by_name(card_name)
-            else:
-                result = self.scryfall_api.search_card_by_name(card_name)
+            result = self.scryfall_api.search_card_by_name(card_name)
             
             if result:
                 logger.info(f"Found card via API: {result.get('name')}")
@@ -275,12 +266,12 @@ class CardRecognitionEngine:
         
         return None
 
-    def recognize_from_photo(self, image_path: str, tcg: str = 'mtg') -> Dict:
+    def recognize_from_photo(self, image_path: str) -> Dict:
         """
         Main recognition method for mobile photos.
-        Uses OCR to extract card name, then searches via API.
+        Uses OCR to extract card name, then searches via Scryfall API.
         """
-        logger.info(f"Recognizing card from photo | path={image_path} | tcg={tcg}")
+        logger.info(f"Recognizing card from photo | path={image_path}")
         
         try:
             # Load and preprocess image
@@ -310,7 +301,7 @@ class CardRecognitionEngine:
                 
                 if extracted_name and len(extracted_name) >= 3:
                     # Search by extracted name
-                    card_data = self.search_card_by_name(extracted_name, tcg)
+                    card_data = self.search_card_by_name(extracted_name)
                     
                     if card_data:
                         return {
@@ -328,7 +319,7 @@ class CardRecognitionEngine:
                         for i in range(len(words), 0, -1):
                             partial_name = ' '.join(words[:i])
                             if len(partial_name) >= 3:
-                                card_data = self.search_card_by_name(partial_name, tcg)
+                                card_data = self.search_card_by_name(partial_name)
                                 if card_data:
                                     return {
                                         'success': True,
@@ -367,20 +358,18 @@ class CardRecognitionEngine:
         ahash = imagehash.average_hash(pil_image, hash_size=16)
         return str(ahash)
     
-    def find_matching_card(self, image_hash: str, tcg: str = None) -> Optional[Tuple[Card, float]]:
+    def find_matching_card(self, image_hash: str) -> Optional[Tuple[Card, float]]:
         """
         Find matching card in database using perceptual hash
         Returns (Card, confidence_score) or None
         """
-        logger.debug(f"Searching for matching card | hash={image_hash[:16]}... | tcg={tcg}")
+        logger.debug(f"Searching for matching card | hash={image_hash[:16]}...")
         db = get_db()
         
         try:
             with PerformanceLogger("find_matching_card"):
-                # Query cards from database
-                query = db.query(Card)
-                if tcg:
-                    query = query.filter(Card.tcg == tcg)
+                # Query MTG cards from database
+                query = db.query(Card).filter(Card.tcg == 'mtg')
                 
                 cards = query.all()
                 logger.debug(f"Comparing against {len(cards)} cards in database")
@@ -422,15 +411,13 @@ class CardRecognitionEngine:
         finally:
             db.close()
     
-    def recognize_card(self, image_path: str, tcg: str = None) -> Dict:
+    def recognize_card(self, image_path: str) -> Dict:
         """
-        Main recognition pipeline - tries multiple methods:
-        1. OCR + API search (best for mobile photos)
+        Main recognition pipeline for Magic: The Gathering cards:
+        1. OCR + Scryfall API search (best for mobile photos)
         2. Hash matching against local database
         """
-        logger.info(f"Starting card recognition | path={image_path} | tcg={tcg}")
-        
-        tcg = tcg or 'mtg'
+        logger.info(f"Starting card recognition | path={image_path}")
         
         try:
             with PerformanceLogger("recognize_card"):
@@ -471,7 +458,7 @@ class CardRecognitionEngine:
                     extracted_name = self.extract_text_ocr(name_region)
                     
                     if extracted_name and len(extracted_name) >= 3:
-                        card_data = self.search_card_by_name(extracted_name, tcg)
+                        card_data = self.search_card_by_name(extracted_name)
                         if card_data:
                             logger.info(f"Recognition via OCR successful: {card_data.get('name')}")
                             return {
@@ -486,7 +473,7 @@ class CardRecognitionEngine:
                 # Method 2: Direct API search with fuzzy matching
                 # Try searching API directly (Scryfall has good fuzzy matching)
                 logger.debug("Trying direct API search...")
-                card_data = self.search_card_by_name_fuzzy(image_path, tcg)
+                card_data = self.search_card_by_name_fuzzy(image_path)
                 if card_data:
                     return {
                         'success': True,
@@ -499,7 +486,7 @@ class CardRecognitionEngine:
                 # Method 3: Hash matching against local database
                 logger.debug("Trying hash matching...")
                 img_hash = self.compute_image_hash(pil_img)
-                match = self.find_matching_card(img_hash, tcg)
+                match = self.find_matching_card(img_hash)
                 
                 if match:
                     card, confidence = match
@@ -533,7 +520,7 @@ class CardRecognitionEngine:
                 'message': f'Recognition error: {str(e)}'
             }
     
-    def search_card_by_name_fuzzy(self, image_path: str, tcg: str) -> Optional[Dict]:
+    def search_card_by_name_fuzzy(self, image_path: str) -> Optional[Dict]:
         """
         Try to recognize card by sending image name hints to API.
         This is a placeholder for more advanced recognition.
@@ -541,11 +528,11 @@ class CardRecognitionEngine:
         # For now, return None - this would need a cloud vision API
         return None
     
-    def batch_recognize(self, image_paths: List[str], tcg: str = None) -> List[Dict]:
+    def batch_recognize(self, image_paths: List[str]) -> List[Dict]:
         """Recognize multiple cards in batch"""
         results = []
         for image_path in image_paths:
-            result = self.recognize_card(image_path, tcg)
+            result = self.recognize_card(image_path)
             results.append(result)
         return results
 

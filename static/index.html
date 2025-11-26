@@ -8,6 +8,102 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Trending Cards Styles */
+        .trending-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .trending-item:last-child {
+            border-bottom: none;
+        }
+        
+        .trending-item img {
+            width: 40px;
+            height: 56px;
+            object-fit: cover;
+            border-radius: var(--radius-sm);
+        }
+        
+        .trending-item .card-info {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .trending-item .card-name {
+            font-weight: 600;
+            font-size: 13px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .trending-item .card-set {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+        
+        .trending-item .trend-badge {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 2px;
+        }
+        
+        .trending-item .price {
+            font-weight: 600;
+            font-size: 13px;
+        }
+        
+        .trending-item .change {
+            font-size: 12px;
+            font-weight: 600;
+            padding: 2px 6px;
+            border-radius: var(--radius-sm);
+        }
+        
+        .trending-item .change.up {
+            color: #22c55e;
+            background: rgba(34, 197, 94, 0.1);
+        }
+        
+        .trending-item .change.down {
+            color: #ef4444;
+            background: rgba(239, 68, 68, 0.1);
+        }
+        
+        .trending-section {
+            margin-bottom: 16px;
+        }
+        
+        .trending-section:last-child {
+            margin-bottom: 0;
+        }
+        
+        .trending-section-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .trending-section-title.gainers {
+            color: #22c55e;
+        }
+        
+        .trending-section-title.losers {
+            color: #ef4444;
+        }
+    </style>
 </head>
 <body>
     <div class="page-wrapper">
@@ -74,7 +170,7 @@
                     <div class="stat-label">Unique Cards</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-value" id="collectionValue">$0.00</div>
+                    <div class="stat-value" id="collectionValue">€0.00</div>
                     <div class="stat-label">Collection Value</div>
                 </div>
                 <div class="stat-card">
@@ -119,10 +215,10 @@
 
                 <div class="card">
                     <div class="card-header">
-                        <h3 class="card-title">Collection Breakdown</h3>
+                        <h3 class="card-title">💎 Top Valuable Cards</h3>
                     </div>
                     <div class="card-body">
-                        <div id="tcgBreakdown">
+                        <div id="topValuableCards">
                             <p class="text-muted text-center">Loading...</p>
                         </div>
                     </div>
@@ -134,6 +230,17 @@
                     </div>
                     <div class="card-body">
                         <div id="priceTiers">
+                            <p class="text-muted text-center">Loading...</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">📈 Trending Cards</h3>
+                    </div>
+                    <div class="card-body">
+                        <div id="trendingCards">
                             <p class="text-muted text-center">Loading...</p>
                         </div>
                     </div>
@@ -169,7 +276,7 @@
                 document.getElementById('totalCards').textContent = stats.total_cards || 0;
                 document.getElementById('uniqueCards').textContent = stats.unique_cards || 0;
                 document.getElementById('collectionValue').textContent = 
-                    `$${(stats.value?.total_value || 0).toFixed(2)}`;
+                    `€${(stats.value?.total_value || 0).toFixed(2)}`;
                 
                 // Load recent scans
                 const collectionResponse = await fetch('/api/collection?limit=5');
@@ -192,18 +299,8 @@
                     recentContainer.innerHTML = '<p class="text-muted text-center">No scans yet</p>';
                 }
                 
-                // Display TCG breakdown
-                const tcgContainer = document.getElementById('tcgBreakdown');
-                if (stats.tcg_breakdown && Object.keys(stats.tcg_breakdown).length > 0) {
-                    tcgContainer.innerHTML = Object.entries(stats.tcg_breakdown).map(([tcg, count]) => `
-                        <div style="display: flex; justify-content: space-between; padding: var(--spacing-sm) 0;">
-                            <span style="text-transform: uppercase; font-weight: 600;">${tcg}</span>
-                            <span class="badge badge-info">${count}</span>
-                        </div>
-                    `).join('');
-                } else {
-                    tcgContainer.innerHTML = '<p class="text-muted text-center">No cards yet</p>';
-                }
+                // Load top valuable cards
+                await loadTopValuableCards();
                 
                 // Display price tiers
                 const tiersContainer = document.getElementById('priceTiers');
@@ -216,7 +313,7 @@
                                 <div>
                                     <span class="badge badge-success">${data.count} cards</span>
                                     <span style="margin-left: var(--spacing-sm); color: var(--primary);">
-                                        $${data.value.toFixed(2)}
+                                        €${data.value.toFixed(2)}
                                     </span>
                                 </div>
                             </div>
@@ -225,8 +322,119 @@
                     tiersContainer.innerHTML = '<p class="text-muted text-center">No price data</p>';
                 }
                 
+                // Load trending cards
+                await loadTrendingCards();
+                
             } catch (error) {
                 console.error('Error loading dashboard data:', error);
+            }
+        }
+        
+        async function loadTopValuableCards() {
+            try {
+                const response = await fetch('/api/collection/top-valuable?limit=5');
+                const data = await response.json();
+                
+                const container = document.getElementById('topValuableCards');
+                
+                if (!data.cards || data.cards.length === 0) {
+                    container.innerHTML = '<p class="text-muted text-center">Nessuna carta con prezzo disponibile</p>';
+                    return;
+                }
+                
+                container.innerHTML = data.cards.map((card, index) => `
+                    <div style="display: flex; align-items: center; gap: 12px; padding: 8px 0; ${index > 0 ? 'border-top: 1px solid var(--border);' : ''}">
+                        <div style="font-size: 16px; font-weight: 700; color: ${index === 0 ? '#ffd700' : index === 1 ? '#c0c0c0' : index === 2 ? '#cd7f32' : 'var(--text-muted)'}; min-width: 24px;">
+                            ${index < 3 ? ['🥇', '🥈', '🥉'][index] : (index + 1)}
+                        </div>
+                        ${card.image_url 
+                            ? `<img src="${card.image_url}" alt="${card.name}" style="width: 32px; height: 45px; object-fit: cover; border-radius: 4px;">` 
+                            : '<div style="width:32px;height:45px;background:var(--bg-tertiary);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:12px;">🃏</div>'}
+                        <div style="flex: 1; min-width: 0;">
+                            <div style="font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${card.name}</div>
+                            <div style="font-size: 12px; color: var(--text-muted);">${card.set_name || card.set_code || ''}</div>
+                        </div>
+                        <div style="font-weight: 700; color: var(--primary);">€${card.price_eur?.toFixed(2) || '-'}</div>
+                    </div>
+                `).join('');
+                
+            } catch (error) {
+                console.error('Error loading top valuable cards:', error);
+                document.getElementById('topValuableCards').innerHTML = '<p class="text-muted text-center">Errore nel caricamento</p>';
+            }
+        }
+        
+        async function loadTrendingCards() {
+            try {
+                const response = await fetch('/api/prices/trending?limit=3&days=7');
+                const data = await response.json();
+                
+                const container = document.getElementById('trendingCards');
+                
+                if (data.gainers?.length === 0 && data.losers?.length === 0) {
+                    container.innerHTML = '<p class="text-muted text-center">Non ci sono ancora abbastanza dati sui prezzi. I trend saranno visibili dopo il primo aggiornamento automatico.</p>';
+                    return;
+                }
+                
+                let html = '';
+                
+                // Gainers section
+                if (data.gainers && data.gainers.length > 0) {
+                    html += `
+                        <div class="trending-section">
+                            <div class="trending-section-title gainers">
+                                <span>📈</span> In Salita
+                            </div>
+                            ${data.gainers.map(card => `
+                                <div class="trending-item">
+                                    ${card.image_url 
+                                        ? `<img src="${card.image_url}" alt="${card.name}">` 
+                                        : '<div style="width:40px;height:56px;background:var(--bg-tertiary);border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;">🃏</div>'}
+                                    <div class="card-info">
+                                        <div class="card-name">${card.name}</div>
+                                        <div class="card-set">${card.set_name || ''}</div>
+                                    </div>
+                                    <div class="trend-badge">
+                                        <span class="price">€${card.current_price?.toFixed(2) || '-'}</span>
+                                        <span class="change up">↑ ${Math.abs(card.change_percent)}%</span>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                }
+                
+                // Losers section
+                if (data.losers && data.losers.length > 0) {
+                    html += `
+                        <div class="trending-section">
+                            <div class="trending-section-title losers">
+                                <span>📉</span> In Discesa
+                            </div>
+                            ${data.losers.map(card => `
+                                <div class="trending-item">
+                                    ${card.image_url 
+                                        ? `<img src="${card.image_url}" alt="${card.name}">` 
+                                        : '<div style="width:40px;height:56px;background:var(--bg-tertiary);border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;">🃏</div>'}
+                                    <div class="card-info">
+                                        <div class="card-name">${card.name}</div>
+                                        <div class="card-set">${card.set_name || ''}</div>
+                                    </div>
+                                    <div class="trend-badge">
+                                        <span class="price">€${card.current_price?.toFixed(2) || '-'}</span>
+                                        <span class="change down">↓ ${Math.abs(card.change_percent)}%</span>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                }
+                
+                container.innerHTML = html || '<p class="text-muted text-center">Prezzi stabili</p>';
+                
+            } catch (error) {
+                console.error('Error loading trending cards:', error);
+                document.getElementById('trendingCards').innerHTML = '<p class="text-muted text-center">Errore nel caricamento</p>';
             }
         }
         
@@ -239,6 +447,11 @@
         // Listen for real-time updates
         if (window.socket) {
             window.socket.on('card_scanned', () => {
+                loadDashboardData();
+            });
+            
+            window.socket.on('prices_updated', () => {
+                console.log('Prices updated, refreshing dashboard...');
                 loadDashboardData();
             });
         }

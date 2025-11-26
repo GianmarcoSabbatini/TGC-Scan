@@ -24,12 +24,41 @@ class SortingEngine:
         }
         logger.info("SortingEngine initialized")
     
+    def get_min_bins_for_criteria(self, criteria: str, tcg: str = 'mtg') -> int:
+        """Get minimum number of bins required for a criteria"""
+        if criteria == 'alphabetic':
+            return 6  # A-D, E-H, I-L, M-P, Q-T, U-Z
+        elif criteria == 'color':
+            colors = config.SUPPORTED_TCGS.get(tcg, {}).get('colors', [])
+            return len(colors) + 2  # colors + multicolor + colorless
+        elif criteria == 'type':
+            types = config.SUPPORTED_TCGS.get(tcg, {}).get('types', [])
+            return len(types) + 1  # types + other
+        elif criteria == 'rarity':
+            rarities = config.SUPPORTED_TCGS.get(tcg, {}).get('rarities', [])
+            return len(rarities) + 1  # rarities + unknown
+        elif criteria == 'price':
+            return len(config.PRICE_TIERS)  # 5 price tiers
+        elif criteria == 'set':
+            return 1  # Dynamic, no minimum
+        else:
+            return 6
+    
     def sort_cards(self, cards: List[ScannedCard], criteria: str, 
                    sub_criteria: str = None, bin_count: int = 6) -> Dict[int, List[ScannedCard]]:
         """
         Sort cards into bins based on criteria
         Returns dict mapping bin_number -> list of cards
         """
+        # Get TCG from first card for minimum calculation
+        tcg = cards[0].card.tcg if cards and cards[0].card else 'mtg'
+        
+        # Get minimum bins for this criteria and enforce it
+        min_bins = self.get_min_bins_for_criteria(criteria, tcg)
+        if bin_count < min_bins:
+            logger.info(f"bin_count {bin_count} too low for {criteria}, using minimum {min_bins}")
+            bin_count = min_bins
+        
         # Validate bin_count
         if bin_count < 1:
             bin_count = 6  # Default to 6 bins
@@ -54,6 +83,7 @@ class SortingEngine:
                        bin_count: int = 6) -> Dict[int, List[ScannedCard]]:
         """
         Sort cards alphabetically by 1st, 2nd, or 3rd letter
+        Uses fixed letter ranges that match the bin labels (A-D, E-H, etc.)
         """
         # Determine which letter to use
         position_map = {
@@ -63,36 +93,35 @@ class SortingEngine:
         }
         letter_index = position_map.get(letter_position, 0)
         
-        # Group cards by letter
-        letter_groups = {}
+        # Calculate letter ranges for each bin (same logic as get_bin_labels)
+        letters_per_bin = 26 // bin_count
+        
+        def get_bin_for_letter(letter: str) -> int:
+            """Get the bin number for a given letter based on fixed ranges"""
+            if not letter or not letter.isalpha():
+                return 1  # Non-alphabetic goes to first bin
+            letter_ord = ord(letter.upper()) - 65  # A=0, B=1, etc.
+            if letter_ord < 0 or letter_ord > 25:
+                return 1
+            # Calculate which bin this letter belongs to
+            bin_num = (letter_ord // letters_per_bin) + 1
+            # Make sure we don't exceed bin_count (last bin gets remaining letters)
+            return min(bin_num, bin_count)
+        
+        bins = {i: [] for i in range(1, bin_count + 1)}
+        
         for card in cards:
             name = card.card.name if card.card else ''
             if len(name) > letter_index:
                 letter = name[letter_index].upper()
-                if letter not in letter_groups:
-                    letter_groups[letter] = []
-                letter_groups[letter].append(card)
-        
-        # Distribute letters across bins
-        sorted_letters = sorted(letter_groups.keys())
-        letters_per_bin = max(1, len(sorted_letters) // bin_count)
-        
-        bins = {i: [] for i in range(1, bin_count + 1)}
-        current_bin = 1
-        letters_in_bin = 0
-        
-        for letter in sorted_letters:
-            bins[current_bin].extend(letter_groups[letter])
-            letters_in_bin += 1
-            
-            if letters_in_bin >= letters_per_bin and current_bin < bin_count:
-                current_bin += 1
-                letters_in_bin = 0
-        
-        # Update bin assignments
-        for bin_num, bin_cards in bins.items():
-            for card in bin_cards:
+                bin_num = get_bin_for_letter(letter)
+                bins[bin_num].append(card)
                 card.bin_assignment = bin_num
+                card.sorting_criteria = f'alphabetic_{letter_position}'
+            else:
+                # Card name too short, put in first bin
+                bins[1].append(card)
+                card.bin_assignment = 1
                 card.sorting_criteria = f'alphabetic_{letter_position}'
         
         return bins
@@ -126,45 +155,36 @@ class SortingEngine:
     
     def sort_by_color(self, cards: List[ScannedCard], sub_criteria: str = None, 
                      bin_count: int = 6) -> Dict[int, List[ScannedCard]]:
-        """Sort cards by color (MTG: WUBRG, Pokemon: types, etc.)"""
+        """Sort cards by color (MTG: WUBRG)"""
         # Get TCG from first card to determine color system
         tcg = cards[0].card.tcg if cards and cards[0].card else 'mtg'
         color_order = config.SUPPORTED_TCGS.get(tcg, {}).get('colors', [])
         
-        # Group by color
-        color_groups = {color: [] for color in color_order}
-        color_groups['multicolor'] = []
-        color_groups['colorless'] = []
+        # Build color to bin mapping (fixed positions)
+        # Colors beyond bin_count go to last bin
+        full_color_order = color_order + ['multicolor', 'colorless']
+        color_to_bin = {}
+        for idx, color in enumerate(full_color_order):
+            bin_num = min(idx + 1, bin_count)
+            color_to_bin[color] = bin_num
+        
+        bins = {i: [] for i in range(1, bin_count + 1)}
         
         for card in cards:
             colors = card.card.colors.split(',') if card.card and card.card.colors else []
             colors = [c.strip() for c in colors if c.strip()]
             
             if len(colors) == 0:
-                color_groups['colorless'].append(card)
+                bin_num = color_to_bin.get('colorless', bin_count)
             elif len(colors) == 1:
                 color = colors[0]
-                if color in color_groups:
-                    color_groups[color].append(card)
-                else:
-                    color_groups['multicolor'].append(card)
+                bin_num = color_to_bin.get(color, color_to_bin.get('multicolor', bin_count))
             else:
-                color_groups['multicolor'].append(card)
-        
-        # Assign bins (one bin per color if possible)
-        bins = {i: [] for i in range(1, bin_count + 1)}
-        bin_num = 1
-        
-        for color in color_order + ['multicolor', 'colorless']:
-            if color in color_groups and color_groups[color]:
-                bins[bin_num].extend(color_groups[color])
-                bin_num = min(bin_num + 1, bin_count)
-        
-        # Update bin assignments
-        for bin_num, bin_cards in bins.items():
-            for card in bin_cards:
-                card.bin_assignment = bin_num
-                card.sorting_criteria = 'color'
+                bin_num = color_to_bin.get('multicolor', bin_count)
+            
+            bins[bin_num].append(card)
+            card.bin_assignment = bin_num
+            card.sorting_criteria = 'color'
         
         return bins
     
@@ -175,38 +195,29 @@ class SortingEngine:
         tcg = cards[0].card.tcg if cards and cards[0].card else 'mtg'
         type_order = config.SUPPORTED_TCGS.get(tcg, {}).get('types', [])
         
-        # Group by type
-        type_groups = {card_type: [] for card_type in type_order}
-        type_groups['other'] = []
+        # Build type to bin mapping (fixed positions)
+        full_type_order = type_order + ['other']
+        type_to_bin = {}
+        for idx, card_type in enumerate(full_type_order):
+            bin_num = min(idx + 1, bin_count)
+            type_to_bin[card_type] = bin_num
+        
+        bins = {i: [] for i in range(1, bin_count + 1)}
         
         for card in cards:
-            card_type = card.card.card_type if card.card else ''
+            card_type_str = card.card.card_type if card.card else ''
             
-            # Find matching type
-            matched = False
+            # Find matching type and get its fixed bin
+            matched_type = 'other'
             for known_type in type_order:
-                if known_type.lower() in card_type.lower():
-                    type_groups[known_type].append(card)
-                    matched = True
+                if known_type.lower() in card_type_str.lower():
+                    matched_type = known_type
                     break
             
-            if not matched:
-                type_groups['other'].append(card)
-        
-        # Assign bins
-        bins = {i: [] for i in range(1, bin_count + 1)}
-        bin_num = 1
-        
-        for card_type in type_order + ['other']:
-            if card_type in type_groups and type_groups[card_type]:
-                bins[bin_num].extend(type_groups[card_type])
-                bin_num = min(bin_num + 1, bin_count)
-        
-        # Update bin assignments
-        for bin_num, bin_cards in bins.items():
-            for card in bin_cards:
-                card.bin_assignment = bin_num
-                card.sorting_criteria = 'type'
+            bin_num = type_to_bin.get(matched_type, bin_count)
+            bins[bin_num].append(card)
+            card.bin_assignment = bin_num
+            card.sorting_criteria = 'type'
         
         return bins
     
@@ -217,32 +228,25 @@ class SortingEngine:
         tcg = cards[0].card.tcg if cards and cards[0].card else 'mtg'
         rarity_order = config.SUPPORTED_TCGS.get(tcg, {}).get('rarities', [])
         
-        # Group by rarity
-        rarity_groups = {rarity: [] for rarity in rarity_order}
-        rarity_groups['unknown'] = []
+        # Build rarity to bin mapping (fixed positions)
+        # Rarities: common=1, uncommon=2, rare=3, mythic=4, unknown=last
+        full_rarity_order = rarity_order + ['unknown']
+        rarity_to_bin = {}
+        for idx, rarity in enumerate(full_rarity_order):
+            bin_num = min(idx + 1, bin_count)
+            rarity_to_bin[rarity] = bin_num
+        
+        bins = {i: [] for i in range(1, bin_count + 1)}
         
         for card in cards:
             rarity = card.card.rarity if card.card else ''
             
-            if rarity in rarity_groups:
-                rarity_groups[rarity].append(card)
-            else:
-                rarity_groups['unknown'].append(card)
-        
-        # Assign bins (typically one bin per rarity)
-        bins = {i: [] for i in range(1, bin_count + 1)}
-        bin_num = 1
-        
-        for rarity in rarity_order + ['unknown']:
-            if rarity in rarity_groups and rarity_groups[rarity]:
-                bins[bin_num].extend(rarity_groups[rarity])
-                bin_num = min(bin_num + 1, bin_count)
-        
-        # Update bin assignments
-        for bin_num, bin_cards in bins.items():
-            for card in bin_cards:
-                card.bin_assignment = bin_num
-                card.sorting_criteria = 'rarity'
+            # Get the fixed bin for this rarity
+            bin_num = rarity_to_bin.get(rarity, rarity_to_bin.get('unknown', bin_count))
+            
+            bins[bin_num].append(card)
+            card.bin_assignment = bin_num
+            card.sorting_criteria = 'rarity'
         
         return bins
     
@@ -299,14 +303,42 @@ class SortingEngine:
         
         elif criteria == 'color':
             colors = config.SUPPORTED_TCGS.get(tcg, {}).get('colors', [])
-            return {i + 1: color for i, color in enumerate(colors[:bin_count])}
+            full_colors = colors + ['multicolor', 'colorless']
+            labels = {}
+            for i in range(bin_count):
+                if i < len(full_colors):
+                    labels[i + 1] = full_colors[i]
+                else:
+                    labels[i + 1] = f"Bin {i + 1}"
+            return labels
+        
+        elif criteria == 'type':
+            types = config.SUPPORTED_TCGS.get(tcg, {}).get('types', [])
+            full_types = types + ['other']
+            labels = {}
+            for i in range(bin_count):
+                if i < len(full_types):
+                    labels[i + 1] = full_types[i]
+                else:
+                    labels[i + 1] = f"Bin {i + 1}"
+            return labels
         
         elif criteria == 'rarity':
             rarities = config.SUPPORTED_TCGS.get(tcg, {}).get('rarities', [])
-            return {i + 1: rarity for i, rarity in enumerate(rarities[:bin_count])}
+            full_rarities = rarities + ['unknown']
+            labels = {}
+            for i in range(bin_count):
+                if i < len(full_rarities):
+                    labels[i + 1] = full_rarities[i]
+                else:
+                    labels[i + 1] = f"Bin {i + 1}"
+            return labels
         
         elif criteria == 'price':
             return {i + 1: tier['name'] for i, tier in enumerate(config.PRICE_TIERS[:bin_count])}
+        
+        elif criteria == 'set':
+            return {i + 1: f"Set Group {i + 1}" for i in range(bin_count)}
         
         else:
             return {i: f"Bin {i}" for i in range(1, bin_count + 1)}

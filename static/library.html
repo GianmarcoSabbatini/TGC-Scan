@@ -512,6 +512,46 @@
                 gap: 12px;
             }
         }
+        
+        /* Price Trend Styles */
+        .price-with-trend {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .trend-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 2px;
+            font-size: 12px;
+            font-weight: 600;
+            padding: 2px 6px;
+            border-radius: var(--radius-sm);
+        }
+        
+        .trend-indicator.up {
+            color: #22c55e;
+            background: rgba(34, 197, 94, 0.1);
+        }
+        
+        .trend-indicator.down {
+            color: #ef4444;
+            background: rgba(239, 68, 68, 0.1);
+        }
+        
+        .trend-indicator.stable {
+            color: var(--text-secondary);
+            background: var(--bg-tertiary);
+        }
+        
+        .trend-icon {
+            font-size: 14px;
+        }
+        
+        .trend-percent {
+            font-size: 11px;
+        }
     </style>
 </head>
 
@@ -568,15 +608,6 @@
                             <label class="form-label">Search</label>
                             <input type="text" id="searchInput" class="form-input"
                                 placeholder="Search cards by name...">
-                        </div>
-                        <div class="form-group" style="flex: 1; min-width: 130px;">
-                            <label class="form-label">TCG</label>
-                            <select id="tcgFilter" class="form-select">
-                                <option value="">All TCGs</option>
-                                <option value="mtg">Magic: The Gathering</option>
-                                <option value="pokemon">Pokemon TCG</option>
-                                <option value="yugioh">Yu-Gi-Oh!</option>
-                            </select>
                         </div>
                         <div class="form-group" style="flex: 1; min-width: 130px;">
                             <label class="form-label">Rarity</label>
@@ -648,15 +679,15 @@
     <script>
         let currentView = 'grid';
         let allCards = [];
+        let cardTrends = {}; // Cache for price trends
 
         async function loadLibrary() {
             const searchQuery = document.getElementById('searchInput').value;
-            const tcg = document.getElementById('tcgFilter').value;
             const rarity = document.getElementById('rarityFilter').value;
 
             try {
                 const params = new URLSearchParams();
-                if (tcg) params.append('tcg', tcg);
+                params.append('tcg', 'mtg'); // Only Magic: The Gathering
 
                 const response = await fetch(`/api/collection?${params.toString()}`);
                 const data = await response.json();
@@ -679,9 +710,59 @@
 
                 updateStats(data);
                 displayCards(cards);
+                
+                // Load trends for all cards in background
+                loadPriceTrends(cards);
             } catch (error) {
                 console.error('Error loading library:', error);
             }
+        }
+        
+        async function loadPriceTrends(cards) {
+            // Load price trends for each card
+            for (const card of cards) {
+                if (card.card_id && !cardTrends[card.card_id]) {
+                    try {
+                        const response = await fetch(`/api/prices/trend/${card.id}`);
+                        if (response.ok) {
+                            const trend = await response.json();
+                            cardTrends[card.id] = trend;
+                            // Update the card display with trend
+                            updateCardTrendDisplay(card.id, trend);
+                        }
+                    } catch (error) {
+                        console.error(`Error loading trend for card ${card.id}:`, error);
+                    }
+                }
+            }
+        }
+        
+        function updateCardTrendDisplay(cardId, trend) {
+            const trendElement = document.querySelector(`[data-card-id="${cardId}"] .trend-placeholder`);
+            if (trendElement && trend.data_points >= 2) {
+                trendElement.innerHTML = formatTrendBadge(trend);
+            }
+        }
+        
+        function formatTrendBadge(trend) {
+            if (!trend || trend.data_points < 2) {
+                return '';
+            }
+            
+            const trendClass = trend.trend;
+            const icon = trend.trend_icon;
+            const percent = Math.abs(trend.change_percent);
+            
+            if (trend.trend === 'stable') {
+                return `<span class="trend-indicator stable" title="Prezzo stabile">
+                    <span class="trend-icon">${icon}</span>
+                </span>`;
+            }
+            
+            return `<span class="trend-indicator ${trendClass}" title="${trend.trend === 'up' ? 'In salita' : 'In discesa'} ${percent}%">
+                <span class="trend-icon">${icon}</span>
+                <span class="trend-percent">${percent}%</span>
+            </span>`;
         }
 
         function updateStats(data) {
@@ -745,26 +826,24 @@
         }
 
         function getTcgLabel(tcg) {
-            if (!tcg) return 'TCG';
-            const t = tcg.toLowerCase();
-            if (t === 'mtg' || t === 'magic') return 'MTG';
-            if (t === 'pokemon') return 'PKM';
-            if (t === 'yugioh') return 'YGO';
-            return tcg.toUpperCase();
+            return 'MTG';
         }
 
         function getTcgFullName(tcg) {
-            if (!tcg) return 'Unknown';
-            const t = tcg.toLowerCase();
-            if (t === 'mtg' || t === 'magic') return 'Magic: The Gathering';
-            if (t === 'pokemon') return 'Pokémon TCG';
-            if (t === 'yugioh') return 'Yu-Gi-Oh!';
-            return tcg;
+            return 'Magic: The Gathering';
         }
 
         function formatPrice(price) {
             if (!price && price !== 0) return '-';
             return '€' + parseFloat(price).toFixed(2);
+        }
+        
+        function getPriceTrendHtml(cardId) {
+            const trend = cardTrends[cardId];
+            if (trend) {
+                return formatTrendBadge(trend);
+            }
+            return '<span class="trend-placeholder"></span>';
         }
 
         function displayCards(cards) {
@@ -783,7 +862,7 @@
                 container.innerHTML = cards.map(card => {
                     const qty = card.quantity || 1;
                     return `
-                    <div class="card-item">
+                    <div class="card-item" data-card-id="${card.id}">
                         <div class="card-image">
                             ${card.image_url 
                                 ? `<img src="${card.image_url}" alt="${card.name}">` 
@@ -799,7 +878,10 @@
                                 ${card.rarity ? `<span class="badge rarity ${getRarityClass(card.rarity)}">${card.rarity}</span>` : ''}
                                 ${card.is_foil ? '<span class="badge foil">Foil</span>' : ''}
                             </div>
-                            <div class="card-price">${formatPrice(card.price_eur || card.price_usd)}</div>
+                            <div class="card-price price-with-trend">
+                                <span>${formatPrice(card.price_eur || card.price_usd)}</span>
+                                ${getPriceTrendHtml(card.id)}
+                            </div>
                             <div class="card-footer">
                                 <span>📅 ${new Date(card.scan_date).toLocaleDateString()}</span>
                             </div>
@@ -810,7 +892,7 @@
                 container.innerHTML = cards.map(card => {
                     const qty = card.quantity || 1;
                     return `
-                    <div class="card-item">
+                    <div class="card-item" data-card-id="${card.id}">
                         <div class="card-image">
                             ${card.image_url 
                                 ? `<img src="${card.image_url}" alt="${card.name}">` 
@@ -820,7 +902,10 @@
                         <div class="card-content">
                             <div class="card-header-row">
                                 <div class="card-name">${card.name}</div>
-                                <div class="card-price-tag">${formatPrice(card.price_eur || card.price_usd)}</div>
+                                <div class="card-price-tag price-with-trend">
+                                    <span>${formatPrice(card.price_eur || card.price_usd)}</span>
+                                    ${getPriceTrendHtml(card.id)}
+                                </div>
                             </div>
                             <div class="card-set">${card.set_name || 'Unknown Set'}</div>
                             <div class="card-meta">
@@ -842,7 +927,7 @@
                 container.innerHTML = cards.map(card => {
                     const qty = card.quantity || 1;
                     return `
-                    <div class="card-item">
+                    <div class="card-item" data-card-id="${card.id}">
                         <div class="card-image">
                             ${card.image_url 
                                 ? `<img src="${card.image_url}" alt="${card.name}">` 
@@ -855,7 +940,10 @@
                             ${card.rarity ? `<span class="badge rarity ${getRarityClass(card.rarity)}">${card.rarity}</span>` : ''}
                         </div>
                         <div class="card-qty">${qty > 1 ? `x${qty}` : ''}</div>
-                        <div class="card-price-compact">${formatPrice(card.price_eur || card.price_usd)}</div>
+                        <div class="card-price-compact price-with-trend">
+                            <span>${formatPrice(card.price_eur || card.price_usd)}</span>
+                            ${getPriceTrendHtml(card.id)}
+                        </div>
                         <div class="card-date-compact">${new Date(card.scan_date).toLocaleDateString()}</div>
                     </div>
                 `}).join('');
@@ -881,7 +969,6 @@
         });
 
         // Filter on change
-        document.getElementById('tcgFilter').addEventListener('change', loadLibrary);
         document.getElementById('rarityFilter').addEventListener('change', () => {
             displayCards(getFilteredCards());
         });
@@ -897,6 +984,13 @@
         if (window.socket) {
             window.socket.on('card_scanned', () => {
                 loadLibrary();
+            });
+            
+            // Listen for price updates
+            window.socket.on('prices_updated', (data) => {
+                console.log('Prices updated:', data);
+                cardTrends = {}; // Clear cache
+                loadLibrary(); // Reload with new prices
             });
         }
     </script>

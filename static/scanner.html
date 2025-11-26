@@ -48,14 +48,6 @@
                 <div class="card-body">
                     <div class="flex gap-lg" style="flex-wrap: wrap;">
                         <div class="form-group" style="flex: 1; min-width: 200px;">
-                            <label class="form-label">Trading Card Game</label>
-                            <select id="tcgSelect" class="form-select">
-                                <option value="mtg">Magic: The Gathering</option>
-                                <option value="pokemon">Pokemon TCG</option>
-                                <option value="yugioh">Yu-Gi-Oh!</option>
-                            </select>
-                        </div>
-                        <div class="form-group" style="flex: 1; min-width: 200px;">
                             <label class="form-label">Scan Mode</label>
                             <select id="scanMode" class="form-select">
                                 <option value="single">Single Card</option>
@@ -319,15 +311,14 @@
             resultsCard.style.display = 'block';
             scanResults = [];
 
-            const tcg = document.getElementById('tcgSelect').value;
             const isFoil = document.getElementById('isFoil').checked;
             const scanMode = document.getElementById('scanMode').value;
 
             if (scanMode === 'batch') {
-                await batchScan(queuedFiles, tcg, isFoil);
+                await batchScan(queuedFiles, isFoil);
             } else {
                 for (let i = 0; i < queuedFiles.length; i++) {
-                    await scanSingleCard(queuedFiles[i], tcg, isFoil, i + 1, queuedFiles.length);
+                    await scanSingleCard(queuedFiles[i], isFoil, i + 1, queuedFiles.length);
                 }
             }
 
@@ -340,10 +331,10 @@
             scanQueueCard.style.display = 'none';
         });
 
-        async function scanSingleCard(file, tcg, isFoil, current, total) {
+        async function scanSingleCard(file, isFoil, current, total) {
             const formData = new FormData();
             formData.append('file', file);
-            formData.append('tcg', tcg);
+            formData.append('tcg', 'mtg');
             formData.append('is_foil', isFoil);
 
             try {
@@ -468,8 +459,6 @@
                 searchResults.style.display = 'none';
                 return;
             }
-
-            const tcg = document.getElementById('tcgSelect').value;
             
             searchResultsContent.innerHTML = `
                 <div style="text-align: center; padding: 20px;">
@@ -481,7 +470,7 @@
 
             try {
                 // Search external API
-                const response = await fetch(`/api/cards/search/api?q=${encodeURIComponent(query)}&tcg=${tcg}`);
+                const response = await fetch(`/api/cards/search/api?q=${encodeURIComponent(query)}&tcg=mtg`);
                 const data = await response.json();
 
                 if (data.cards && data.cards.length > 0) {
@@ -538,7 +527,6 @@
         }
 
         async function addCardToCollection(cardName, cardId) {
-            const tcg = document.getElementById('tcgSelect').value;
             const isFoil = document.getElementById('isFoil').checked;
             
             try {
@@ -548,7 +536,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         name: cardName,
-                        tcg: tcg,
+                        tcg: 'mtg',
                         is_foil: isFoil
                     })
                 });
@@ -630,7 +618,6 @@
 
         // Scan captured photo
         async function scanCapturedPhoto(file) {
-            const tcg = document.getElementById('tcgSelect').value;
             const isFoil = document.getElementById('isFoil').checked;
             
             // Show loading toast
@@ -638,7 +625,7 @@
             
             const formData = new FormData();
             formData.append('file', file);
-            formData.append('tcg', tcg);
+            formData.append('tcg', 'mtg');
             formData.append('is_foil', isFoil);
 
             try {

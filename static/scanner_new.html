@@ -687,14 +687,6 @@
 
             <!-- Scan Options -->
             <div class="scan-options">
-                <div class="form-group">
-                    <label>TCG Type</label>
-                    <select id="tcgSelect" class="form-select">
-                        <option value="mtg">Magic: The Gathering</option>
-                        <option value="pokemon">Pokémon TCG</option>
-                        <option value="yugioh">Yu-Gi-Oh!</option>
-                    </select>
-                </div>
                 <div class="form-group" style="display: flex; align-items: flex-end;">
                     <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 10px 0;">
                         <input type="checkbox" id="isFoil" style="width: 20px; height: 20px;">
@@ -972,12 +964,11 @@
         }
 
         async function scanCard(blob) {
-            const tcg = document.getElementById('tcgSelect').value;
             const isFoil = document.getElementById('isFoil').checked;
             
             const formData = new FormData();
             formData.append('file', blob, 'capture.jpg');
-            formData.append('tcg', tcg);
+            formData.append('tcg', 'mtg');
             formData.append('is_foil', isFoil);
 
             try {
@@ -1020,7 +1011,7 @@
                 if (result.success) {
                     const rarity = (result.card.rarity || 'common').toLowerCase();
                     const rarityClass = rarity.includes('mythic') ? 'mythic' : rarity.includes('rare') ? 'rare' : '';
-                    const tcgLabel = result.card.tcg === 'mtg' ? 'MTG' : result.card.tcg === 'pokemon' ? 'PKM' : 'YGO';
+                    const tcgLabel = 'MTG';
                     
                     return `
                         <div class="result-item">
@@ -1123,7 +1114,7 @@
                 
                 const formData = new FormData();
                 formData.append('file', file);
-                formData.append('tcg', document.getElementById('tcgSelect').value);
+                formData.append('tcg', 'mtg');
                 formData.append('is_foil', document.getElementById('isFoil').checked);
 
                 try {

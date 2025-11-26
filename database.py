@@ -14,12 +14,12 @@ logger = get_logger('database')
 Base = declarative_base()
 
 class Card(Base):
-    """Master card database - all known cards"""
+    """Master card database - Magic: The Gathering cards"""
     __tablename__ = 'cards'
     
     id = Column(Integer, primary_key=True)
-    tcg = Column(String(20), nullable=False)  # mtg, pokemon, yugioh
-    card_id = Column(String(100), unique=True, nullable=False)  # API card ID
+    tcg = Column(String(20), nullable=False)  # mtg
+    card_id = Column(String(100), unique=True, nullable=False)  # Scryfall card ID
     name = Column(String(200), nullable=False, index=True)
     set_code = Column(String(50), index=True)
     set_name = Column(String(200))

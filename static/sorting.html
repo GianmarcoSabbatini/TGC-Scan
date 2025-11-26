@@ -102,10 +102,33 @@
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <script src="app.js"></script>
     <script>
+        let minBins = {};
+        
+        // Load minimum bins on page load
+        async function loadMinBins() {
+            try {
+                const response = await fetch('/api/sort/min-bins');
+                minBins = await response.json();
+                updateSubCriteria(); // Update after loading
+            } catch (error) {
+                console.error('Error loading min bins:', error);
+                // Fallback defaults
+                minBins = {
+                    alphabetic: 6,
+                    set: 1,
+                    color: 8,
+                    type: 8,
+                    rarity: 5,
+                    price: 5
+                };
+            }
+        }
+        
         function updateSubCriteria() {
             const criteria = document.getElementById('sortCriteria').value;
             const subGroup = document.getElementById('subCriteriaGroup');
             const subSelect = document.getElementById('subCriteria');
+            const binInput = document.getElementById('binCount');
 
             if (criteria === 'alphabetic') {
                 subGroup.style.display = 'block';
@@ -117,6 +140,12 @@
             } else {
                 subGroup.style.display = 'none';
             }
+            
+            // Update minimum bins for this criteria and set value to minimum
+            const min = minBins[criteria] || 6;
+            binInput.min = min;
+            binInput.value = min;  // Always set to minimum when changing criteria
+            binInput.placeholder = `Min: ${min}`;
         }
 
         async function previewSorting() {
@@ -211,7 +240,10 @@
         }
 
         // Initialize
-        updateSubCriteria();
+        loadMinBins();
+        
+        // Update on criteria change
+        document.getElementById('sortCriteria').addEventListener('change', updateSubCriteria);
     </script>
 </body>
 

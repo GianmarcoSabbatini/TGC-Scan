@@ -21,7 +21,7 @@ MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max file size
 RECOGNITION_CONFIDENCE_THRESHOLD = 0.75
 IMAGE_HASH_THRESHOLD = 10  # Hamming distance for perceptual hash matching
 
-# Supported TCGs
+# Supported TCG - Magic: The Gathering only
 SUPPORTED_TCGS = {
     'mtg': {
         'name': 'Magic: The Gathering',
@@ -29,27 +29,12 @@ SUPPORTED_TCGS = {
         'colors': ['W', 'U', 'B', 'R', 'G', 'C'],  # White, Blue, Black, Red, Green, Colorless
         'rarities': ['common', 'uncommon', 'rare', 'mythic'],
         'types': ['Creature', 'Instant', 'Sorcery', 'Enchantment', 'Artifact', 'Planeswalker', 'Land']
-    },
-    'pokemon': {
-        'name': 'Pokemon TCG',
-        'api': 'pokemontcg',
-        'types': ['Grass', 'Fire', 'Water', 'Lightning', 'Psychic', 'Fighting', 'Darkness', 'Metal', 'Fairy', 'Dragon', 'Colorless'],
-        'rarities': ['Common', 'Uncommon', 'Rare', 'Rare Holo', 'Ultra Rare']
-    },
-    'yugioh': {
-        'name': 'Yu-Gi-Oh!',
-        'api': 'ygoprodeck',
-        'types': ['Monster', 'Spell', 'Trap'],
-        'rarities': ['Common', 'Rare', 'Super Rare', 'Ultra Rare', 'Secret Rare']
     }
 }
 
-# API Configuration
+# API Configuration - Scryfall only
 SCRYFALL_API_BASE = 'https://api.scryfall.com'
 SCRYFALL_RATE_LIMIT = 10  # requests per second
-TCGPLAYER_API_BASE = 'https://api.tcgplayer.com'
-POKEMON_API_BASE = 'https://api.pokemontcg.io/v2'
-YUGIOH_API_BASE = 'https://db.ygoprodeck.com/api/v7'
 
 # Price tracking
 PRICE_UPDATE_INTERVAL = 3600  # 1 hour in seconds

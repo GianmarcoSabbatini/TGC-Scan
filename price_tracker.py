@@ -3,7 +3,7 @@ TCG Scan - Price Tracking Module
 Handles real-time price tracking and historical data
 """
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from database import Card, PriceHistory, get_db
 from api_integrations import CardAPIManager
 import config
@@ -21,25 +21,17 @@ class PriceTracker:
         
     def update_card_price(self, card: Card) -> Optional[float]:
         """
-        Update price for a single card
+        Update price for a single MTG card
         Returns the new price or None if update failed
         """
-        logger.debug(f"Updating price for card | id={card.id} | name={card.name} | tcg={card.tcg}")
+        logger.debug(f"Updating price for card | id={card.id} | name={card.name}")
         db = get_db()
         
         try:
-            # Fetch current price from API
-            if card.tcg == 'mtg':
-                card_data = self.api_manager.scryfall.get_card_by_set_and_number(
-                    card.set_code, card.collector_number
-                )
-            elif card.tcg == 'pokemon':
-                card_data = self.api_manager.pokemon.search_card_by_name(card.name)
-            elif card.tcg == 'yugioh':
-                card_data = self.api_manager.yugioh.search_card_by_name(card.name)
-            else:
-                logger.warning(f"Unknown TCG for price update: {card.tcg}")
-                return None
+            # Fetch current price from Scryfall API
+            card_data = self.api_manager.scryfall.get_card_by_set_and_number(
+                card.set_code, card.collector_number
+            )
             
             if not card_data:
                 logger.debug(f"No API data found for card: {card.name}")
@@ -71,18 +63,16 @@ class PriceTracker:
         finally:
             db.close()
     
-    def update_all_prices(self, tcg: str = None, max_cards: int = None) -> Dict[str, int]:
+    def update_all_prices(self, max_cards: int = None) -> Dict[str, int]:
         """
-        Update prices for all cards (or filtered by TCG)
+        Update prices for all MTG cards
         Returns statistics about the update
         """
-        logger.info(f"Starting bulk price update | tcg={tcg} | max_cards={max_cards}")
+        logger.info(f"Starting bulk price update | max_cards={max_cards}")
         db = get_db()
         
         try:
-            query = db.query(Card)
-            if tcg:
-                query = query.filter(Card.tcg == tcg)
+            query = db.query(Card).filter(Card.tcg == 'mtg')
             
             if max_cards:
                 cards = query.limit(max_cards).all()
@@ -146,14 +136,22 @@ class PriceTracker:
         finally:
             db.close()
     
-    def get_current_price(self, card_id: int) -> Optional[float]:
-        """Get the most recent price for a card"""
+    def get_current_price(self, card_id: int, currency: str = 'EUR') -> Optional[float]:
+        """Get the most recent price for a card (prefers EUR)"""
         db = get_db()
         
         try:
+            # First try to get price in preferred currency
             latest_price = db.query(PriceHistory).filter(
-                PriceHistory.card_id == card_id
+                PriceHistory.card_id == card_id,
+                PriceHistory.currency == currency
             ).order_by(PriceHistory.recorded_at.desc()).first()
+            
+            # Fallback to any currency if preferred not found
+            if not latest_price:
+                latest_price = db.query(PriceHistory).filter(
+                    PriceHistory.card_id == card_id
+                ).order_by(PriceHistory.recorded_at.desc()).first()
             
             return latest_price.price if latest_price else None
             
@@ -206,10 +204,82 @@ class PriceTracker:
             
             return {
                 'total_value': round(total_value, 2),
-                'currency': 'USD',
+                'currency': 'EUR',
                 'tier_breakdown': tier_breakdown,
                 'card_count': len(scanned_cards)
             }
             
         finally:
             db.close()
+    
+    def get_price_trend(self, card_id: int, days: int = 7) -> Dict:
+        """
+        Calculate price trend for a card over the last N days
+        Returns trend direction, percentage change, and price data
+        """
+        db = get_db()
+        
+        try:
+            cutoff_date = datetime.utcnow() - timedelta(days=days)
+            
+            # Get all prices in the period, ordered by date
+            prices = db.query(PriceHistory).filter(
+                PriceHistory.card_id == card_id,
+                PriceHistory.recorded_at >= cutoff_date
+            ).order_by(PriceHistory.recorded_at.asc()).all()
+            
+            if len(prices) < 2:
+                # Not enough data for trend
+                current = prices[-1].price if prices else None
+                return {
+                    'trend': 'stable',
+                    'trend_icon': '→',
+                    'current_price': current,
+                    'previous_price': None,
+                    'change_amount': 0,
+                    'change_percent': 0,
+                    'data_points': len(prices)
+                }
+            
+            # Get oldest and newest price in the period
+            oldest_price = prices[0].price
+            newest_price = prices[-1].price
+            
+            # Calculate change
+            change_amount = newest_price - oldest_price
+            change_percent = (change_amount / oldest_price * 100) if oldest_price > 0 else 0
+            
+            # Determine trend (threshold of 2% to avoid noise)
+            if change_percent > 2:
+                trend = 'up'
+                trend_icon = '↑'
+            elif change_percent < -2:
+                trend = 'down'
+                trend_icon = '↓'
+            else:
+                trend = 'stable'
+                trend_icon = '→'
+            
+            return {
+                'trend': trend,
+                'trend_icon': trend_icon,
+                'current_price': round(newest_price, 2),
+                'previous_price': round(oldest_price, 2),
+                'change_amount': round(change_amount, 2),
+                'change_percent': round(change_percent, 1),
+                'data_points': len(prices)
+            }
+            
+        finally:
+            db.close()
+    
+    def get_price_with_trend(self, card_id: int) -> Dict:
+        """Get current price along with trend information"""
+        current_price = self.get_current_price(card_id)
+        trend_data = self.get_price_trend(card_id)
+        
+        return {
+            'price': current_price,
+            'currency': 'EUR',
+            **trend_data
+        }

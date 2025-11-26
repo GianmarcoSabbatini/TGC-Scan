@@ -44,14 +44,7 @@
                     <h3 class="card-title">Import Single Card</h3>
                 </div>
                 <div class="card-body">
-                    <div class="form-group">
-                        <label class="form-label">Trading Card Game</label>
-                        <select id="singleTcg" class="form-select">
-                            <option value="mtg">Magic: The Gathering</option>
-                            <option value="pokemon">Pokemon TCG</option>
-                            <option value="yugioh">Yu-Gi-Oh!</option>
-                        </select>
-                    </div>
+                    <p class="text-muted mb-md">Search for Magic: The Gathering cards using the Scryfall database.</p>
                     <div class="form-group">
                         <label class="form-label">Card Name</label>
                         <input type="text" id="cardName" class="form-input" placeholder="Enter card name...">
@@ -108,7 +101,6 @@
     <script src="app.js"></script>
     <script>
         async function importSingleCard() {
-            const tcg = document.getElementById('singleTcg').value;
             const name = document.getElementById('cardName').value.trim();
 
             if (!name) {
@@ -120,7 +112,7 @@
                 const response = await fetch('/api/cards/import', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, tcg })
+                    body: JSON.stringify({ name, tcg: 'mtg' })
                 });
 
                 const data = await response.json();

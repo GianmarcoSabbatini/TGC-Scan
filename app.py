@@ -8,6 +8,8 @@ from flask_socketio import SocketIO, emit
 import os
 from werkzeug.utils import secure_filename
 from datetime import datetime
+import threading
+import time
 
 import config
 from database import init_db, get_db, Card, ScannedCard, Collection, SortingConfig, PriceHistory
@@ -40,6 +42,73 @@ api_manager = CardAPIManager()
 # Initialize database
 init_db()
 logger.info("Application initialization complete")
+
+# ============================================================================
+# BACKGROUND PRICE UPDATE TASK
+# ============================================================================
+
+class PriceUpdateScheduler:
+    """Background scheduler for automatic price updates"""
+    
+    def __init__(self, interval_hours: int = 6):
+        self.interval_seconds = interval_hours * 3600
+        self.running = False
+        self.thread = None
+        self.last_update = None
+        logger.info(f"PriceUpdateScheduler initialized | interval={interval_hours}h")
+    
+    def start(self):
+        """Start the background price update thread"""
+        if self.running:
+            return
+        
+        self.running = True
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+        logger.info("Price update scheduler started")
+    
+    def stop(self):
+        """Stop the background thread"""
+        self.running = False
+        if self.thread:
+            self.thread.join(timeout=5)
+        logger.info("Price update scheduler stopped")
+    
+    def _run(self):
+        """Background thread main loop"""
+        while self.running:
+            try:
+                logger.info("Starting scheduled price update...")
+                stats = price_tracker.update_all_prices()
+                self.last_update = datetime.utcnow()
+                
+                # Notify connected clients
+                socketio.emit('prices_updated', {
+                    'timestamp': self.last_update.isoformat(),
+                    'stats': stats
+                })
+                
+                logger.info(f"Scheduled price update complete | stats={stats}")
+                
+            except Exception as e:
+                logger.error(f"Scheduled price update error: {e}", exc_info=True)
+            
+            # Sleep in small intervals to allow clean shutdown
+            for _ in range(self.interval_seconds):
+                if not self.running:
+                    break
+                time.sleep(1)
+    
+    def get_status(self):
+        """Get scheduler status"""
+        return {
+            'running': self.running,
+            'interval_hours': self.interval_seconds / 3600,
+            'last_update': self.last_update.isoformat() if self.last_update else None
+        }
+
+# Initialize and start the price scheduler
+price_scheduler = PriceUpdateScheduler(interval_hours=6)
 
 def allowed_file(filename):
     """Check if file extension is allowed"""
@@ -324,9 +393,11 @@ def import_card_from_api():
                     logger.error(f"Error adding existing card to collection: {e}")
                     return jsonify({'message': 'Card already exists', 'card': existing.to_dict()})
             
-            # Extract price data if present
+            # Extract price data if present (these are not columns in Card model)
             price_usd = card_data.pop('price_usd', None)
             price_usd_foil = card_data.pop('price_usd_foil', None)
+            price_eur = card_data.pop('price_eur', None)
+            price_eur_foil = card_data.pop('price_eur_foil', None)
             
             card = Card(**card_data)
             db.add(card)
@@ -345,9 +416,24 @@ def import_card_from_api():
                     )
                     db.add(price_record)
                     db.commit()
-                    logger.debug(f"Price history added | card_id={card.id} | price={price}")
+                    logger.debug(f"USD price history added | card_id={card.id} | price={price}")
                 except (ValueError, TypeError):
                     logger.warning(f"Could not parse price_usd: {price_usd}")
+            
+            if price_eur:
+                try:
+                    price = float(price_eur)
+                    price_record = PriceHistory(
+                        card_id=card.id,
+                        price=price,
+                        price_source='api_import',
+                        currency='EUR'
+                    )
+                    db.add(price_record)
+                    db.commit()
+                    logger.debug(f"EUR price history added | card_id={card.id} | price={price}")
+                except (ValueError, TypeError):
+                    logger.warning(f"Could not parse price_eur: {price_eur}")
             
             # Automatically add to collection (ScannedCard) so user sees it in library
             try:
@@ -415,6 +501,15 @@ def bulk_import_cards():
                 if image_hash:
                     card_data['image_hash'] = image_hash
                 
+                # Save card name before removing price fields
+                card_name = card_data.get('name', 'Unknown')
+                
+                # Remove price fields that are not columns in Card model
+                card_data.pop('price_usd', None)
+                card_data.pop('price_usd_foil', None)
+                card_data.pop('price_eur', None)
+                card_data.pop('price_eur_foil', None)
+                
                 card = Card(**card_data)
                 db.add(card)
                 imported += 1
@@ -423,7 +518,7 @@ def bulk_import_cards():
                 socketio.emit('import_progress', {
                     'imported': imported,
                     'skipped': skipped,
-                    'current_card': card_data['name']
+                    'current_card': card_name
                 })
             
             db.commit()
@@ -542,9 +637,57 @@ def get_collection_stats():
     finally:
         db.close()
 
+@app.route('/api/collection/top-valuable', methods=['GET'])
+def get_top_valuable_cards():
+    """Get the most valuable cards in the collection"""
+    limit = request.args.get('limit', 5, type=int)
+    
+    logger.debug(f"Get top valuable cards | limit={limit}")
+    
+    db = get_db()
+    try:
+        # Get all scanned cards with their price history
+        scanned_cards = db.query(ScannedCard).all()
+        
+        cards_with_prices = []
+        for sc in scanned_cards:
+            if sc.card:
+                # Get the latest EUR price
+                price_eur = price_tracker.get_current_price(sc.card.id, 'EUR')
+                if price_eur and price_eur > 0:
+                    card_data = sc.card.to_dict()
+                    card_data['price_eur'] = price_eur
+                    card_data['scanned_id'] = sc.id
+                    cards_with_prices.append(card_data)
+        
+        # Sort by price descending
+        cards_with_prices.sort(key=lambda x: x.get('price_eur', 0), reverse=True)
+        
+        # Return top N
+        top_cards = cards_with_prices[:limit]
+        
+        logger.info(f"Top valuable cards retrieved | count={len(top_cards)}")
+        return jsonify({
+            'cards': top_cards,
+            'total': len(cards_with_prices)
+        })
+    finally:
+        db.close()
+
 # ============================================================================
 # SORTING ENDPOINTS
 # ============================================================================
+
+@app.route('/api/sort/min-bins', methods=['GET'])
+def get_min_bins():
+    """Get minimum number of bins for each sorting criteria"""
+    tcg = request.args.get('tcg', 'mtg')
+    
+    min_bins = {}
+    for criteria in ['alphabetic', 'set', 'color', 'type', 'rarity', 'price']:
+        min_bins[criteria] = sorting_engine.get_min_bins_for_criteria(criteria, tcg)
+    
+    return jsonify(min_bins)
 
 @app.route('/api/sort/preview', methods=['POST'])
 def preview_sorting():
@@ -696,6 +839,99 @@ def get_price_history(card_id):
         logger.error(f"Price history error: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/prices/trend/<int:card_id>', methods=['GET'])
+def get_price_trend(card_id):
+    """Get price trend for a card"""
+    days = request.args.get('days', 7, type=int)
+    
+    logger.debug(f"Price trend request | card_id={card_id} | days={days}")
+    
+    try:
+        trend = price_tracker.get_price_trend(card_id, days)
+        logger.info(f"Price trend retrieved | card_id={card_id} | trend={trend['trend']}")
+        return jsonify(trend)
+    except Exception as e:
+        logger.error(f"Price trend error: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/prices/scheduler/status', methods=['GET'])
+def get_scheduler_status():
+    """Get price update scheduler status"""
+    return jsonify(price_scheduler.get_status())
+
+@app.route('/api/prices/scheduler/start', methods=['POST'])
+def start_scheduler():
+    """Start the price update scheduler"""
+    price_scheduler.start()
+    return jsonify({'message': 'Scheduler started', 'status': price_scheduler.get_status()})
+
+@app.route('/api/prices/scheduler/stop', methods=['POST'])
+def stop_scheduler():
+    """Stop the price update scheduler"""
+    price_scheduler.stop()
+    return jsonify({'message': 'Scheduler stopped', 'status': price_scheduler.get_status()})
+
+@app.route('/api/prices/trending', methods=['GET'])
+def get_trending_cards():
+    """Get cards with biggest price changes (up and down)"""
+    limit = request.args.get('limit', 5, type=int)
+    days = request.args.get('days', 7, type=int)
+    
+    logger.debug(f"Trending cards request | limit={limit} | days={days}")
+    
+    db = get_db()
+    try:
+        from sqlalchemy.orm import joinedload
+        
+        # Get all scanned cards with their card info
+        scanned_cards = db.query(ScannedCard).options(
+            joinedload(ScannedCard.card)
+        ).all()
+        
+        trending_data = []
+        
+        for sc in scanned_cards:
+            if not sc.card:
+                continue
+            
+            trend = price_tracker.get_price_trend(sc.card.id, days)
+            
+            if trend['data_points'] >= 2:
+                trending_data.append({
+                    'id': sc.id,
+                    'card_id': sc.card.id,
+                    'name': sc.card.name,
+                    'set_name': sc.card.set_name,
+                    'image_url': sc.card.image_url,
+                    'current_price': trend['current_price'],
+                    'previous_price': trend['previous_price'],
+                    'change_amount': trend['change_amount'],
+                    'change_percent': trend['change_percent'],
+                    'trend': trend['trend'],
+                    'trend_icon': trend['trend_icon']
+                })
+        
+        # Sort by absolute change percentage
+        trending_data.sort(key=lambda x: abs(x['change_percent']), reverse=True)
+        
+        # Split into gainers and losers
+        gainers = [c for c in trending_data if c['trend'] == 'up'][:limit]
+        losers = [c for c in trending_data if c['trend'] == 'down'][:limit]
+        
+        logger.info(f"Trending cards retrieved | gainers={len(gainers)} | losers={len(losers)}")
+        
+        return jsonify({
+            'gainers': gainers,
+            'losers': losers,
+            'total_tracked': len(trending_data)
+        })
+        
+    except Exception as e:
+        logger.error(f"Trending cards error: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+    finally:
+        db.close()
+
 # ============================================================================
 # STATIC FILE SERVING
 # ============================================================================
@@ -737,5 +973,9 @@ if __name__ == '__main__':
     logger.info(f"Database: {config.DATABASE_PATH}")
     logger.info(f"Upload folder: {config.UPLOAD_FOLDER}")
     logger.info("=" * 60)
+    
+    # Start background price update scheduler
+    price_scheduler.start()
+    logger.info("Price update scheduler started (updates every 6 hours)")
     
     socketio.run(app, debug=config.DEBUG, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)

@@ -1,8 +1,8 @@
-# TCG Scan System
+# MTG Scan System
 
-![TCG Scan Logo](https://img.shields.io/badge/TCG Scan-Scan%20Sort%20Done-00D084?style=for-the-badge)
+![MTG Scan Logo](https://img.shields.io/badge/MTG%20Scan-Scan%20Sort%20Done-00D084?style=for-the-badge)
 
-Un sistema completo di scansione e catalogazione per Trading Card Games (TCG) con riconoscimento AI, ordinamento intelligente e tracking prezzi in tempo reale.
+Un sistema completo di scansione e catalogazione per Magic: The Gathering con riconoscimento AI, ordinamento intelligente e tracking prezzi in tempo reale.
 
 ## 🎯 Funzionalità Principali
 
@@ -15,7 +15,7 @@ Un sistema completo di scansione e catalogazione per Trading Card Games (TCG) co
 
 ### 🗂️ Catalogazione Digitale
 - **Database completo** con tutte le informazioni delle carte
-- Supporto per **3 TCG**: Magic: The Gathering, Pokemon, Yu-Gi-Oh!
+- Integrazione con **Scryfall API** per dati accurati
 - **Collezioni personalizzate** per organizzare le carte
 - **Ricerca e filtri** avanzati
 - **Export dei dati** in vari formati
@@ -24,7 +24,7 @@ Un sistema completo di scansione e catalogazione per Trading Card Games (TCG) co
 - **6 criteri di ordinamento**:
   - Alfabetico (1°, 2°, 3° lettera)
   - Set/Espansione
-  - Colore
+  - Colore (WUBRG + multicolor + colorless)
   - Tipo di carta
   - Rarità
   - Prezzo (5 tier)
@@ -33,9 +33,10 @@ Un sistema completo di scansione e catalogazione per Trading Card Games (TCG) co
 - **Salvataggio configurazioni** per riutilizzo
 
 ### 💰 Tracking Prezzi
-- Integrazione con **Scryfall** (MTG), **Pokemon TCG API**, **Yu-Gi-Oh API**
-- **Aggiornamento automatico** dei prezzi
+- Integrazione con **Scryfall API** per prezzi accurati (EUR e USD)
+- **Aggiornamento automatico** dei prezzi ogni 6 ore
 - **Storico prezzi** per tracking nel tempo
+- **Trend di prezzo** con indicatori ↑↓→
 - **Calcolo valore collezione** con breakdown per tier
 - **5 tier di prezzo**: Bulk, Low, Medium, High, Premium
 
@@ -180,36 +181,26 @@ static/
 ### Prices
 - `POST /api/prices/update` - Aggiorna prezzi
 - `GET /api/prices/history/<card_id>` - Storico prezzi
+- `GET /api/prices/trend/<card_id>` - Trend prezzi
+- `GET /api/prices/trending` - Carte in trend
 
 ## 🎨 Tecnologie Utilizzate
 
 - **Backend**: Flask, SQLAlchemy, Flask-SocketIO
 - **Computer Vision**: OpenCV, Pillow
 - **Image Hashing**: imagehash
-- **APIs**: Scryfall, Pokemon TCG, Yu-Gi-Oh
+- **APIs**: Scryfall (per dati e prezzi MTG)
 - **Frontend**: HTML5, CSS3, JavaScript (Vanilla)
 - **Real-time**: Socket.IO
 - **Database**: SQLite
 
-## 📊 Supporto TCG
+## 📊 Supporto Magic: The Gathering
 
-### Magic: The Gathering
-- ✅ Riconoscimento completo
+- ✅ Riconoscimento completo tramite OCR + Scryfall API
 - ✅ Tutti i set disponibili
-- ✅ Prezzi in tempo reale (Scryfall)
-- ✅ Sorting per colore WUBRG
-
-### Pokemon TCG
-- ✅ Riconoscimento completo
-- ✅ Tutti i set disponibili
-- ✅ Prezzi disponibili
-- ✅ Sorting per tipo
-
-### Yu-Gi-Oh!
-- ✅ Riconoscimento completo
-- ✅ Database completo
-- ✅ Prezzi disponibili
-- ✅ Sorting per tipo
+- ✅ Prezzi in tempo reale (EUR e USD)
+- ✅ Trend prezzi con indicatori visuali
+- ✅ Sorting per colore WUBRG, tipo, rarità, set, prezzo
 
 ## 🔒 Note sulla Sicurezza
 
@@ -223,7 +214,7 @@ static/
 ### Il riconoscimento non funziona
 - Assicurati di aver importato le carte nel database
 - Verifica che le immagini siano di buona qualità
-- Controlla che il TCG selezionato sia corretto
+- Prova a inserire manualmente il nome della carta
 
 ### Errori di import
 - Verifica la connessione internet
@@ -240,10 +231,8 @@ Questo progetto è stato creato per scopi educativi e dimostrativi.
 
 ## 🙏 Credits
 
-- **Scryfall API** per i dati Magic: The Gathering
-- **Pokemon TCG API** per i dati Pokemon
-- **YGOPRODeck API** per i dati Yu-Gi-Oh!
+- **Scryfall API** per i dati e prezzi Magic: The Gathering
 
 ---
 
-**TCG Scan** - Scan. Sort. Done. ⚡
+**MTG Scan** - Scan. Sort. Done. ⚡
