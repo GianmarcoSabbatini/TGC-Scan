@@ -1,0 +1,1195 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>TCG Scan - Card Scanner</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Mobile-First Scanner Styles */
+        .scanner-container {
+            position: relative;
+            width: 100%;
+            max-width: 100%;
+        }
+
+        .camera-section {
+            position: relative;
+            background: #000;
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+            aspect-ratio: 3/4;
+            max-height: 60vh;
+            min-height: 300px;
+        }
+
+        .camera-section.fullscreen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            max-height: 100vh;
+            border-radius: 0;
+            z-index: 1000;
+            aspect-ratio: auto;
+        }
+
+        #cameraPreview {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        #capturedCanvas {
+            display: none;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .camera-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            pointer-events: none;
+        }
+
+        .card-guide {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 65%;
+            aspect-ratio: 63/88;
+            border: 3px solid rgba(255, 255, 255, 0.7);
+            border-radius: 12px;
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.4);
+        }
+
+        .camera-controls {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 24px;
+            background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
+            pointer-events: auto;
+        }
+
+        .camera-btn {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            border: 3px solid white;
+            background: rgba(255, 255, 255, 0.2);
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            color: white;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .camera-btn:hover, .camera-btn:active {
+            background: rgba(255, 255, 255, 0.4);
+            transform: scale(1.05);
+        }
+
+        .camera-btn.capture {
+            width: 72px;
+            height: 72px;
+            background: var(--primary);
+            border-color: var(--primary);
+            font-size: 28px;
+        }
+
+        .camera-btn.capture:hover, .camera-btn.capture:active {
+            background: var(--primary-hover);
+        }
+
+        .camera-btn.capture.disabled {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+
+        .camera-top-controls {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: linear-gradient(rgba(0, 0, 0, 0.6), transparent);
+            pointer-events: auto;
+        }
+
+        .camera-status {
+            color: white;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #ff4444;
+        }
+
+        .status-dot.active {
+            background: #00ff00;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .mode-tabs {
+            display: flex;
+            gap: 0;
+            background: var(--bg-tertiary);
+            border-radius: var(--radius-md);
+            padding: 4px;
+            margin-bottom: 16px;
+        }
+
+        .mode-tab {
+            flex: 1;
+            padding: 12px 16px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            border-radius: var(--radius-sm);
+            font-weight: 500;
+            color: var(--text-secondary);
+            transition: all 0.2s;
+            font-size: 14px;
+        }
+
+        .mode-tab.active {
+            background: var(--primary);
+            color: white;
+        }
+
+        .mode-tab:hover:not(.active) {
+            background: var(--bg-secondary);
+        }
+
+        .scan-options {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
+        .scan-options .form-group {
+            flex: 1;
+            min-width: 140px;
+        }
+
+        .scan-options .form-group label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        .quick-actions {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .quick-action-btn {
+            padding: 16px;
+            border: 2px solid var(--border);
+            background: var(--bg-secondary);
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-primary);
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .quick-action-btn:hover, .quick-action-btn:active {
+            border-color: var(--primary);
+            background: var(--bg-tertiary);
+        }
+
+        .quick-action-btn .icon {
+            font-size: 28px;
+        }
+
+        .quick-action-btn .label {
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        /* Camera permission message */
+        .camera-permission {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            text-align: center;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.8);
+        }
+
+        .camera-permission.hidden {
+            display: none;
+        }
+
+        .camera-permission .icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+
+        .camera-permission p {
+            margin-bottom: 16px;
+            opacity: 0.9;
+        }
+
+        .camera-permission .btn {
+            padding: 14px 28px;
+            font-size: 16px;
+        }
+
+        /* Scanning animation */
+        .scanning-indicator {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            text-align: center;
+            display: none;
+            z-index: 10;
+        }
+
+        .scanning-indicator.active {
+            display: block;
+        }
+
+        .scanning-indicator .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 12px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Toast notifications */
+        .toast-container {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            width: 90%;
+            max-width: 400px;
+        }
+
+        .toast {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            padding: 12px 16px;
+            border-radius: var(--radius-md);
+            box-shadow: var(--shadow-lg);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            animation: slideUp 0.3s ease;
+        }
+
+        .toast.success {
+            border-left: 4px solid var(--success);
+        }
+
+        .toast.error {
+            border-left: 4px solid var(--error);
+        }
+
+        @keyframes slideUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        /* Upload area */
+        .upload-area {
+            border: 2px dashed var(--border);
+            border-radius: var(--radius-lg);
+            padding: 40px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .upload-area:hover, .upload-area.dragover {
+            border-color: var(--primary);
+            background: rgba(var(--primary-rgb), 0.05);
+        }
+
+        .upload-area .icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+        }
+
+        /* Results section */
+        .results-section {
+            margin-top: 24px;
+        }
+
+        .result-item {
+            background: var(--bg-secondary);
+            border-radius: var(--radius-lg);
+            padding: 0;
+            margin-bottom: 16px;
+            display: flex;
+            gap: 0;
+            align-items: stretch;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(-20px); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        .result-item .card-image {
+            width: 100px;
+            min-height: 140px;
+            background: var(--bg-tertiary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .result-item .card-image img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .result-item .card-image .placeholder {
+            font-size: 32px;
+            opacity: 0.5;
+        }
+
+        .result-item .card-content {
+            flex: 1;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .result-item .card-header-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 8px;
+        }
+
+        .result-item .name {
+            font-weight: 700;
+            font-size: 16px;
+            color: var(--text-primary);
+            line-height: 1.2;
+        }
+
+        .result-item .confidence {
+            font-size: 13px;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: var(--radius-full);
+            background: linear-gradient(135deg, var(--success), #00a86b);
+            color: white;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+
+        .result-item .set-info {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .result-item .badges {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-top: 4px;
+        }
+
+        .result-item .badge {
+            font-size: 11px;
+            padding: 3px 8px;
+            border-radius: var(--radius-sm);
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .result-item .badge.tcg {
+            background: var(--primary);
+            color: white;
+        }
+
+        .result-item .badge.rarity {
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+            border: 1px solid var(--border);
+        }
+
+        .result-item .badge.rarity.mythic {
+            background: linear-gradient(135deg, #ff6b35, #f7931a);
+            color: white;
+            border: none;
+        }
+
+        .result-item .badge.rarity.rare {
+            background: linear-gradient(135deg, #c9a227, #f0d060);
+            color: #1a1a1a;
+            border: none;
+        }
+
+        .result-item.error {
+            border-left: 4px solid var(--error);
+        }
+
+        .result-item.error .confidence {
+            background: var(--error);
+        }
+
+        /* Scan counter badge */
+        .scan-counter {
+            position: fixed;
+            top: 80px;
+            right: 16px;
+            background: var(--primary);
+            color: white;
+            padding: 8px 16px;
+            border-radius: var(--radius-full);
+            font-weight: 600;
+            z-index: 100;
+            display: none;
+        }
+
+        .scan-counter.visible {
+            display: block;
+            animation: bounceIn 0.3s ease;
+        }
+
+        @keyframes bounceIn {
+            0% { transform: scale(0.5); opacity: 0; }
+            70% { transform: scale(1.1); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        /* Mobile-specific styles */
+        @media (max-width: 768px) {
+            .sidebar {
+                display: none;
+            }
+            
+            .main-content {
+                margin-left: 0;
+                padding: 12px;
+            }
+            
+            .header {
+                padding: 12px 0;
+            }
+            
+            .header h1 {
+                font-size: 1.5rem;
+            }
+            
+            .camera-section {
+                max-height: 55vh;
+                border-radius: var(--radius-md);
+            }
+            
+            .camera-btn {
+                width: 50px;
+                height: 50px;
+                font-size: 18px;
+            }
+            
+            .camera-btn.capture {
+                width: 64px;
+                height: 64px;
+                font-size: 24px;
+            }
+            
+            .quick-actions {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            
+            .card-guide {
+                width: 70%;
+            }
+            
+            .mobile-nav {
+                display: flex;
+            }
+        }
+
+        /* Mobile bottom navigation */
+        .mobile-nav {
+            display: none;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border);
+            padding: 8px 0;
+            padding-bottom: max(8px, env(safe-area-inset-bottom));
+            z-index: 100;
+        }
+
+        .mobile-nav-links {
+            display: flex;
+            justify-content: space-around;
+        }
+
+        .mobile-nav-link {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 11px;
+            padding: 4px 12px;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .mobile-nav-link.active {
+            color: var(--primary);
+        }
+
+        .mobile-nav-link .icon {
+            font-size: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .mobile-nav {
+                display: block;
+            }
+            
+            body {
+                padding-bottom: 70px;
+            }
+        }
+
+        /* Camera loading state */
+        .camera-loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            text-align: center;
+        }
+
+        .camera-loading .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 12px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="page-wrapper">
+        <!-- Sidebar (hidden on mobile) -->
+        <aside class="sidebar">
+            <div class="logo mb-xl">
+                <h2 style="color: var(--primary); font-size: var(--font-size-2xl);">⚡ TCG Scan</h2>
+                <p class="text-muted" style="font-size: var(--font-size-sm);">Scan. Sort. Done.</p>
+            </div>
+            <nav>
+                <ul class="nav">
+                    <li class="nav-item"><a href="index.html" class="nav-link"><span class="nav-icon">📊</span>Dashboard</a></li>
+                    <li class="nav-item"><a href="scanner.html" class="nav-link active"><span class="nav-icon">📷</span>Scanner</a></li>
+                    <li class="nav-item"><a href="library.html" class="nav-link"><span class="nav-icon">📚</span>Card Library</a></li>
+                    <li class="nav-item"><a href="sorting.html" class="nav-link"><span class="nav-icon">🔄</span>Sorting</a></li>
+                    <li class="nav-item"><a href="import.html" class="nav-link"><span class="nav-icon">⬇️</span>Import Cards</a></li>
+                </ul>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="header">
+                <h1>📷 Card Scanner</h1>
+                <p class="text-muted">Scan cards using your camera</p>
+            </div>
+
+            <!-- Toast Container -->
+            <div class="toast-container" id="toastContainer"></div>
+
+            <!-- Scan Counter -->
+            <div class="scan-counter" id="scanCounter">0 scanned</div>
+
+            <!-- Mode Tabs -->
+            <div class="mode-tabs">
+                <button class="mode-tab active" onclick="switchMode('camera')" id="cameraModeTab">📷 Camera</button>
+                <button class="mode-tab" onclick="switchMode('upload')" id="uploadModeTab">📁 Upload</button>
+            </div>
+
+            <!-- Scan Options -->
+            <div class="scan-options">
+                <div class="form-group">
+                    <label>TCG Type</label>
+                    <select id="tcgSelect" class="form-select">
+                        <option value="mtg">Magic: The Gathering</option>
+                        <option value="pokemon">Pokémon TCG</option>
+                        <option value="yugioh">Yu-Gi-Oh!</option>
+                    </select>
+                </div>
+                <div class="form-group" style="display: flex; align-items: flex-end;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 10px 0;">
+                        <input type="checkbox" id="isFoil" style="width: 20px; height: 20px;">
+                        <span>Foil</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Camera Mode -->
+            <div class="card mb-lg" id="cameraCard">
+                <div class="card-body" style="padding: 0; overflow: hidden; border-radius: var(--radius-lg);">
+                    <div class="camera-section" id="cameraSection">
+                        <video id="cameraPreview" autoplay playsinline muted></video>
+                        <canvas id="capturedCanvas"></canvas>
+                        
+                        <div class="camera-overlay">
+                            <div class="card-guide" id="cardGuide"></div>
+                            
+                            <div class="camera-top-controls">
+                                <div class="camera-status">
+                                    <span class="status-dot" id="statusDot"></span>
+                                    <span id="cameraStatusText">Camera off</span>
+                                </div>
+                                <button class="camera-btn" style="width: 40px; height: 40px; font-size: 16px;" onclick="toggleFullscreen()" title="Fullscreen">⛶</button>
+                            </div>
+                            
+                            <div class="camera-controls">
+                                <button class="camera-btn" onclick="switchCamera()" title="Switch Camera" id="switchCameraBtn">🔄</button>
+                                <button class="camera-btn capture disabled" onclick="capturePhoto()" title="Capture" id="captureBtn">📸</button>
+                                <button class="camera-btn" onclick="toggleFlash()" title="Flash" id="flashBtn">⚡</button>
+                            </div>
+                            
+                            <div class="scanning-indicator" id="scanningIndicator">
+                                <div class="spinner"></div>
+                                <p>Scanning...</p>
+                            </div>
+                        </div>
+                        
+                        <div class="camera-permission" id="cameraPermission">
+                            <div class="icon">📷</div>
+                            <p>Camera access is required to scan cards</p>
+                            <button class="btn btn-primary" onclick="startCamera()">Enable Camera</button>
+                        </div>
+                        
+                        <div class="camera-loading" id="cameraLoading" style="display: none;">
+                            <div class="spinner"></div>
+                            <p>Starting camera...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Upload Mode (Hidden by default) -->
+            <div class="card mb-lg" id="uploadCard" style="display: none;">
+                <div class="card-body">
+                    <div class="upload-area" id="uploadArea">
+                        <div class="icon">📁</div>
+                        <p><strong>Tap to select images</strong></p>
+                        <p class="text-muted" style="font-size: 13px;">or drag & drop files here</p>
+                        <input type="file" id="fileInput" accept="image/*" multiple capture="environment" hidden>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="quick-actions" id="quickActions">
+                <button class="quick-action-btn" onclick="viewLibrary()">
+                    <span class="icon">📚</span>
+                    <span class="label">View Library</span>
+                </button>
+                <button class="quick-action-btn" onclick="startSorting()">
+                    <span class="icon">🔄</span>
+                    <span class="label">Start Sorting</span>
+                </button>
+            </div>
+
+            <!-- Results Section -->
+            <div class="results-section" id="resultsSection" style="display: none;">
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">Recent Scans</h3>
+                        <button class="btn btn-sm btn-secondary" onclick="clearResults()">Clear</button>
+                    </div>
+                    <div class="card-body" id="resultsContainer"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Mobile Bottom Navigation -->
+    <nav class="mobile-nav">
+        <div class="mobile-nav-links">
+            <a href="index.html" class="mobile-nav-link">
+                <span class="icon">📊</span>
+                <span>Dashboard</span>
+            </a>
+            <a href="scanner.html" class="mobile-nav-link active">
+                <span class="icon">📷</span>
+                <span>Scanner</span>
+            </a>
+            <a href="library.html" class="mobile-nav-link">
+                <span class="icon">📚</span>
+                <span>Library</span>
+            </a>
+            <a href="sorting.html" class="mobile-nav-link">
+                <span class="icon">🔄</span>
+                <span>Sorting</span>
+            </a>
+        </div>
+    </nav>
+
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="app.js"></script>
+    <script>
+        // State
+        let cameraStream = null;
+        let currentFacingMode = 'environment'; // 'user' for front camera, 'environment' for back
+        let flashEnabled = false;
+        let isScanning = false;
+        let scanResults = [];
+        let scanCount = 0;
+
+        // Elements
+        const cameraPreview = document.getElementById('cameraPreview');
+        const capturedCanvas = document.getElementById('capturedCanvas');
+        const cameraSection = document.getElementById('cameraSection');
+        const cameraPermission = document.getElementById('cameraPermission');
+        const cameraLoading = document.getElementById('cameraLoading');
+        const statusDot = document.getElementById('statusDot');
+        const cameraStatusText = document.getElementById('cameraStatusText');
+        const captureBtn = document.getElementById('captureBtn');
+        const scanningIndicator = document.getElementById('scanningIndicator');
+        const toastContainer = document.getElementById('toastContainer');
+        const resultsSection = document.getElementById('resultsSection');
+        const resultsContainer = document.getElementById('resultsContainer');
+        const scanCounter = document.getElementById('scanCounter');
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+
+        // Check if camera API is supported
+        const isCameraSupported = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            if (isCameraSupported) {
+                // Auto-start camera on mobile
+                if (isMobile()) {
+                    setTimeout(startCamera, 500);
+                }
+            } else {
+                cameraPermission.innerHTML = `
+                    <div class="icon">⚠️</div>
+                    <p>Camera not supported on this device</p>
+                    <button class="btn btn-primary" onclick="switchMode('upload')">Use Upload Instead</button>
+                `;
+            }
+            
+            setupUploadHandlers();
+        });
+
+        function isMobile() {
+            return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        }
+
+        // Camera functions
+        async function startCamera() {
+            cameraPermission.classList.add('hidden');
+            cameraLoading.style.display = 'block';
+            
+            try {
+                const constraints = {
+                    video: {
+                        facingMode: currentFacingMode,
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
+                    },
+                    audio: false
+                };
+
+                cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+                cameraPreview.srcObject = cameraStream;
+                
+                cameraPreview.onloadedmetadata = () => {
+                    cameraLoading.style.display = 'none';
+                    cameraPreview.style.display = 'block';
+                    statusDot.classList.add('active');
+                    cameraStatusText.textContent = 'Camera active';
+                    captureBtn.classList.remove('disabled');
+                };
+            } catch (err) {
+                console.error('Camera error:', err);
+                cameraLoading.style.display = 'none';
+                cameraPermission.classList.remove('hidden');
+                
+                if (err.name === 'NotAllowedError') {
+                    cameraPermission.innerHTML = `
+                        <div class="icon">🚫</div>
+                        <p>Camera permission denied</p>
+                        <p style="font-size: 12px; opacity: 0.7;">Please enable camera access in your browser settings</p>
+                        <button class="btn btn-primary" onclick="startCamera()">Try Again</button>
+                    `;
+                } else {
+                    cameraPermission.innerHTML = `
+                        <div class="icon">⚠️</div>
+                        <p>Could not access camera</p>
+                        <p style="font-size: 12px; opacity: 0.7;">${err.message}</p>
+                        <button class="btn btn-primary" onclick="startCamera()">Try Again</button>
+                    `;
+                }
+            }
+        }
+
+        function stopCamera() {
+            if (cameraStream) {
+                cameraStream.getTracks().forEach(track => track.stop());
+                cameraStream = null;
+            }
+            cameraPreview.srcObject = null;
+            statusDot.classList.remove('active');
+            cameraStatusText.textContent = 'Camera off';
+            captureBtn.classList.add('disabled');
+        }
+
+        async function switchCamera() {
+            currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
+            stopCamera();
+            await startCamera();
+            showToast(`Switched to ${currentFacingMode === 'environment' ? 'back' : 'front'} camera`, 'success');
+        }
+
+        function toggleFlash() {
+            if (!cameraStream) return;
+            
+            const track = cameraStream.getVideoTracks()[0];
+            const capabilities = track.getCapabilities();
+            
+            if (capabilities.torch) {
+                flashEnabled = !flashEnabled;
+                track.applyConstraints({ advanced: [{ torch: flashEnabled }] });
+                document.getElementById('flashBtn').style.background = flashEnabled ? 'var(--warning)' : 'rgba(255, 255, 255, 0.2)';
+                showToast(`Flash ${flashEnabled ? 'on' : 'off'}`, 'success');
+            } else {
+                showToast('Flash not available on this device', 'error');
+            }
+        }
+
+        function toggleFullscreen() {
+            cameraSection.classList.toggle('fullscreen');
+            
+            if (cameraSection.classList.contains('fullscreen')) {
+                document.body.style.overflow = 'hidden';
+            } else {
+                document.body.style.overflow = '';
+            }
+        }
+
+        async function capturePhoto() {
+            if (!cameraStream || isScanning) return;
+            
+            isScanning = true;
+            scanningIndicator.classList.add('active');
+            captureBtn.classList.add('disabled');
+            
+            // Capture frame from video
+            const canvas = capturedCanvas;
+            canvas.width = cameraPreview.videoWidth;
+            canvas.height = cameraPreview.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(cameraPreview, 0, 0);
+            
+            // Convert to blob
+            canvas.toBlob(async (blob) => {
+                await scanCard(blob);
+            }, 'image/jpeg', 0.95);
+        }
+
+        async function scanCard(blob) {
+            const tcg = document.getElementById('tcgSelect').value;
+            const isFoil = document.getElementById('isFoil').checked;
+            
+            const formData = new FormData();
+            formData.append('file', blob, 'capture.jpg');
+            formData.append('tcg', tcg);
+            formData.append('is_foil', isFoil);
+
+            try {
+                const response = await fetch('/api/scan/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    scanCount++;
+                    updateScanCounter();
+                    showToast(`✓ ${result.card.name} recognized!`, 'success');
+                    addResult(result);
+                } else {
+                    showToast(result.message || 'Card not recognized', 'error');
+                    addResult({ success: false, message: result.message || 'Recognition failed' });
+                }
+            } catch (error) {
+                console.error('Scan error:', error);
+                showToast('Scan failed. Please try again.', 'error');
+            } finally {
+                isScanning = false;
+                scanningIndicator.classList.remove('active');
+                captureBtn.classList.remove('disabled');
+            }
+        }
+
+        function addResult(result) {
+            scanResults.unshift(result);
+            if (scanResults.length > 10) scanResults.pop(); // Keep last 10
+            
+            displayResults();
+            resultsSection.style.display = 'block';
+        }
+
+        function displayResults() {
+            resultsContainer.innerHTML = scanResults.map(result => {
+                if (result.success) {
+                    const rarity = (result.card.rarity || 'common').toLowerCase();
+                    const rarityClass = rarity.includes('mythic') ? 'mythic' : rarity.includes('rare') ? 'rare' : '';
+                    const tcgLabel = result.card.tcg === 'mtg' ? 'MTG' : result.card.tcg === 'pokemon' ? 'PKM' : 'YGO';
+                    
+                    return `
+                        <div class="result-item">
+                            <div class="card-image">
+                                ${result.card.image_url 
+                                    ? `<img src="${result.card.image_url}" alt="${result.card.name}">` 
+                                    : '<span class="placeholder">🃏</span>'}
+                            </div>
+                            <div class="card-content">
+                                <div class="card-header-row">
+                                    <div class="name">${result.card.name}</div>
+                                    <span class="confidence">${(result.confidence * 100).toFixed(0)}% match</span>
+                                </div>
+                                <div class="set-info">${result.card.set_name || 'Unknown Set'}</div>
+                                <div class="badges">
+                                    <span class="badge tcg">${tcgLabel}</span>
+                                    <span class="badge rarity ${rarityClass}">${result.card.rarity || 'Common'}</span>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    return `
+                        <div class="result-item error">
+                            <div class="card-image">
+                                <span class="placeholder">❌</span>
+                            </div>
+                            <div class="card-content">
+                                <div class="card-header-row">
+                                    <div class="name">Recognition Failed</div>
+                                    <span class="confidence">Failed</span>
+                                </div>
+                                <div class="set-info">${result.message || 'Try again with better lighting'}</div>
+                            </div>
+                        </div>
+                    `;
+                }
+            }).join('');
+        }
+
+        function clearResults() {
+            scanResults = [];
+            resultsContainer.innerHTML = '';
+            resultsSection.style.display = 'none';
+        }
+
+        function updateScanCounter() {
+            scanCounter.textContent = `${scanCount} scanned`;
+            scanCounter.classList.add('visible');
+        }
+
+        // Mode switching
+        function switchMode(mode) {
+            document.querySelectorAll('.mode-tab').forEach(tab => tab.classList.remove('active'));
+            
+            if (mode === 'camera') {
+                document.getElementById('cameraModeTab').classList.add('active');
+                document.getElementById('cameraCard').style.display = 'block';
+                document.getElementById('uploadCard').style.display = 'none';
+                if (!cameraStream && isCameraSupported) {
+                    startCamera();
+                }
+            } else {
+                document.getElementById('uploadModeTab').classList.add('active');
+                document.getElementById('cameraCard').style.display = 'none';
+                document.getElementById('uploadCard').style.display = 'block';
+                stopCamera();
+            }
+        }
+
+        // Upload handlers
+        function setupUploadHandlers() {
+            uploadArea.addEventListener('click', () => fileInput.click());
+            
+            uploadArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                uploadArea.classList.add('dragover');
+            });
+            
+            uploadArea.addEventListener('dragleave', () => {
+                uploadArea.classList.remove('dragover');
+            });
+            
+            uploadArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                uploadArea.classList.remove('dragover');
+                handleFiles(e.dataTransfer.files);
+            });
+            
+            fileInput.addEventListener('change', (e) => {
+                handleFiles(e.target.files);
+            });
+        }
+
+        async function handleFiles(files) {
+            for (const file of files) {
+                if (!file.type.startsWith('image/')) continue;
+                
+                showToast(`Scanning ${file.name}...`, 'success');
+                
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('tcg', document.getElementById('tcgSelect').value);
+                formData.append('is_foil', document.getElementById('isFoil').checked);
+
+                try {
+                    const response = await fetch('/api/scan/upload', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        scanCount++;
+                        updateScanCounter();
+                        showToast(`✓ ${result.card.name} recognized!`, 'success');
+                        addResult(result);
+                    } else {
+                        showToast(result.message || 'Card not recognized', 'error');
+                        addResult({ success: false, message: result.message || 'Recognition failed' });
+                    }
+                } catch (error) {
+                    console.error('Upload error:', error);
+                    showToast('Upload failed', 'error');
+                }
+            }
+            
+            fileInput.value = '';
+        }
+
+        // Toast notifications
+        function showToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            toastContainer.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.style.animation = 'slideUp 0.3s ease reverse';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // Navigation helpers
+        function viewLibrary() {
+            window.location.href = 'library.html';
+        }
+
+        function startSorting() {
+            window.location.href = 'sorting.html';
+        }
+
+        // Handle visibility change (pause camera when tab is hidden)
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden && cameraStream) {
+                stopCamera();
+            } else if (!document.hidden && document.getElementById('cameraCard').style.display !== 'none') {
+                startCamera();
+            }
+        });
+
+        // Handle escape key for fullscreen
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && cameraSection.classList.contains('fullscreen')) {
+                toggleFullscreen();
+            }
+        });
+    </script>
+</body>
+
+</html>

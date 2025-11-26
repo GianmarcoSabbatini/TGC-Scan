@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TCG Scan - Import Cards</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="page-wrapper">
+        <aside class="sidebar">
+            <div class="logo mb-xl">
+                <h2 style="color: var(--primary); font-size: var(--font-size-2xl);">⚡ TCG Scan</h2>
+                <p class="text-muted" style="font-size: var(--font-size-sm);">Scan. Sort. Done.</p>
+            </div>
+            <nav>
+                <ul class="nav">
+                    <li class="nav-item"><a href="index.html" class="nav-link"><span
+                                class="nav-icon">📊</span>Dashboard</a></li>
+                    <li class="nav-item"><a href="scanner.html" class="nav-link"><span
+                                class="nav-icon">📷</span>Scanner</a></li>
+                    <li class="nav-item"><a href="library.html" class="nav-link"><span class="nav-icon">📚</span>Card
+                            Library</a></li>
+                    <li class="nav-item"><a href="sorting.html" class="nav-link"><span
+                                class="nav-icon">🔄</span>Sorting</a></li>
+                    <li class="nav-item"><a href="import.html" class="nav-link active"><span
+                                class="nav-icon">⬇️</span>Import Cards</a></li>
+                </ul>
+            </nav>
+        </aside>
+
+        <main class="main-content">
+            <div class="header">
+                <h1>Import Cards</h1>
+                <p class="text-muted">Import card data from external APIs to build your recognition database</p>
+            </div>
+
+            <!-- Single Card Import -->
+            <div class="card mb-xl">
+                <div class="card-header">
+                    <h3 class="card-title">Import Single Card</h3>
+                </div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label class="form-label">Trading Card Game</label>
+                        <select id="singleTcg" class="form-select">
+                            <option value="mtg">Magic: The Gathering</option>
+                            <option value="pokemon">Pokemon TCG</option>
+                            <option value="yugioh">Yu-Gi-Oh!</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Card Name</label>
+                        <input type="text" id="cardName" class="form-input" placeholder="Enter card name...">
+                    </div>
+                    <button class="btn btn-primary" onclick="importSingleCard()">Import Card</button>
+                </div>
+            </div>
+
+            <!-- Bulk Import -->
+            <div class="card mb-xl">
+                <div class="card-header">
+                    <h3 class="card-title">Bulk Import (Magic: The Gathering Sets)</h3>
+                </div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label class="form-label">Set Code</label>
+                        <input type="text" id="setCode" class="form-input" placeholder="e.g., MID, VOW, NEO..."
+                            style="text-transform: uppercase;">
+                        <p class="text-muted" style="font-size: var(--font-size-sm); margin-top: var(--spacing-sm);">
+                            Enter the 3-letter set code (e.g., MID for Midnight Hunt, VOW for Crimson Vow)
+                        </p>
+                    </div>
+                    <button class="btn btn-primary" onclick="bulkImport()">Import Entire Set</button>
+                </div>
+            </div>
+
+            <!-- Import Progress -->
+            <div id="progressCard" class="card" style="display: none;">
+                <div class="card-header">
+                    <h3 class="card-title">Import Progress</h3>
+                </div>
+                <div class="card-body">
+                    <div class="progress-bar mb-md">
+                        <div class="progress-fill" id="importProgress" style="width: 0%;"></div>
+                    </div>
+                    <div id="progressText" class="text-center text-muted"></div>
+                    <div id="currentCard" class="text-center mt-md" style="color: var(--primary);"></div>
+                </div>
+            </div>
+
+            <!-- Results -->
+            <div id="resultsCard" class="card" style="display: none;">
+                <div class="card-header">
+                    <h3 class="card-title">Import Results</h3>
+                </div>
+                <div class="card-body">
+                    <div id="importResults"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="app.js"></script>
+    <script>
+        async function importSingleCard() {
+            const tcg = document.getElementById('singleTcg').value;
+            const name = document.getElementById('cardName').value.trim();
+
+            if (!name) {
+                showNotification('Please enter a card name', 'warning');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/cards/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, tcg })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showNotification(data.message, 'success');
+                    document.getElementById('cardName').value = '';
+                    displaySingleResult(data.card);
+                } else {
+                    showNotification(data.error || 'Import failed', 'error');
+                }
+            } catch (error) {
+                console.error('Import error:', error);
+                showNotification('Error importing card', 'error');
+            }
+        }
+
+        async function bulkImport() {
+            const setCode = document.getElementById('setCode').value.trim().toUpperCase();
+
+            if (!setCode) {
+                showNotification('Please enter a set code', 'warning');
+                return;
+            }
+
+            document.getElementById('progressCard').style.display = 'block';
+            document.getElementById('resultsCard').style.display = 'none';
+
+            try {
+                const response = await fetch('/api/cards/bulk-import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tcg: 'mtg', set_code: setCode })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    displayBulkResults(data);
+                    showNotification('Bulk import completed!', 'success');
+                } else {
+                    showNotification(data.error || 'Bulk import failed', 'error');
+                }
+            } catch (error) {
+                console.error('Bulk import error:', error);
+                showNotification('Error during bulk import', 'error');
+            }
+        }
+
+        function displaySingleResult(card) {
+            const resultsCard = document.getElementById('resultsCard');
+            const resultsContainer = document.getElementById('importResults');
+
+            resultsCard.style.display = 'block';
+
+            resultsContainer.innerHTML = `
+                <div class="card">
+                    <div class="card-body">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <h4 style="color: var(--primary);">${card.name}</h4>
+                                <p class="text-muted mb-0">${card.set_name} • ${card.rarity}</p>
+                            </div>
+                            ${card.image_url ? `
+                                <img src="${card.image_url}" style="width: 80px; height: 112px; border-radius: var(--radius-sm); object-fit: cover;">
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function displayBulkResults(data) {
+            const resultsCard = document.getElementById('resultsCard');
+            const resultsContainer = document.getElementById('importResults');
+
+            resultsCard.style.display = 'block';
+
+            resultsContainer.innerHTML = `
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value text-success">${data.imported}</div>
+                        <div class="stat-label">Cards Imported</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value text-muted">${data.skipped}</div>
+                        <div class="stat-label">Already Existed</div>
+                    </div>
+                </div>
+                <div class="mt-lg text-center">
+                    <p class="text-success" style="font-size: var(--font-size-lg);">
+                        ✓ ${data.message}
+                    </p>
+                </div>
+            `;
+        }
+
+        // Listen for import progress updates
+        if (window.socket) {
+            window.socket.on('import_progress', (data) => {
+                const total = data.imported + data.skipped;
+                const progress = document.getElementById('importProgress');
+                const progressText = document.getElementById('progressText');
+                const currentCard = document.getElementById('currentCard');
+
+                progressText.textContent = `Imported: ${data.imported} | Skipped: ${data.skipped}`;
+                currentCard.textContent = `Current: ${data.current_card}`;
+            });
+        }
+
+        // Enter key support
+        document.getElementById('cardName').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') importSingleCard();
+        });
+
+        document.getElementById('setCode').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') bulkImport();
+        });
+    </script>
+</body>
+
+</html>

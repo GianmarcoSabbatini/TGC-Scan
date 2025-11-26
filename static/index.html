@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TCG Scan - Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="page-wrapper">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="logo mb-xl">
+                <h2 style="color: var(--primary); font-size: var(--font-size-2xl);">
+                    ⚡ TCG Scan
+                </h2>
+                <p class="text-muted" style="font-size: var(--font-size-sm);">Scan. Sort. Done.</p>
+            </div>
+            
+            <nav>
+                <ul class="nav">
+                    <li class="nav-item">
+                        <a href="index.html" class="nav-link active">
+                            <span class="nav-icon">📊</span>
+                            Dashboard
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="scanner.html" class="nav-link">
+                            <span class="nav-icon">📷</span>
+                            Scanner
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="library.html" class="nav-link">
+                            <span class="nav-icon">📚</span>
+                            Card Library
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="sorting.html" class="nav-link">
+                            <span class="nav-icon">🔄</span>
+                            Sorting
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="import.html" class="nav-link">
+                            <span class="nav-icon">⬇️</span>
+                            Import Cards
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="header">
+                <h1>Dashboard</h1>
+                <p class="text-muted">Welcome to TCG Scan</p>
+            </div>
+
+            <!-- Stats Grid -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="totalCards">0</div>
+                    <div class="stat-label">Total Cards</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="uniqueCards">0</div>
+                    <div class="stat-label">Unique Cards</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="collectionValue">$0.00</div>
+                    <div class="stat-label">Collection Value</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="recentScans">0</div>
+                    <div class="stat-label">Recent Scans</div>
+                </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="card mb-xl">
+                <div class="card-header">
+                    <h3 class="card-title">Quick Actions</h3>
+                </div>
+                <div class="card-body">
+                    <div class="flex gap-md">
+                        <a href="scanner.html" class="btn btn-primary btn-lg">
+                            📷 Start Scanning
+                        </a>
+                        <a href="sorting.html" class="btn btn-outline btn-lg">
+                            🔄 Sort Collection
+                        </a>
+                        <a href="import.html" class="btn btn-secondary btn-lg">
+                            ⬇️ Import Cards
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Activity -->
+            <div class="card-grid">
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">Recent Scans</h3>
+                        <a href="library.html" class="btn btn-sm btn-secondary">View All</a>
+                    </div>
+                    <div class="card-body">
+                        <div id="recentScansContainer">
+                            <p class="text-muted text-center">No recent scans</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">Collection Breakdown</h3>
+                    </div>
+                    <div class="card-body">
+                        <div id="tcgBreakdown">
+                            <p class="text-muted text-center">Loading...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">Price Tiers</h3>
+                    </div>
+                    <div class="card-body">
+                        <div id="priceTiers">
+                            <p class="text-muted text-center">Loading...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- System Status -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">System Status</h3>
+                </div>
+                <div class="card-body">
+                    <div class="flex items-center gap-md">
+                        <div class="badge badge-success">● Server Online</div>
+                        <div class="badge badge-info" id="wsStatus">● WebSocket Connected</div>
+                        <div class="badge badge-success" id="dbStatus">● Database Ready</div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="app.js"></script>
+    <script>
+        // Dashboard-specific code
+        async function loadDashboardData() {
+            try {
+                // Load collection stats
+                const statsResponse = await fetch('/api/collection/stats');
+                const stats = await statsResponse.json();
+                
+                document.getElementById('totalCards').textContent = stats.total_cards || 0;
+                document.getElementById('uniqueCards').textContent = stats.unique_cards || 0;
+                document.getElementById('collectionValue').textContent = 
+                    `$${(stats.value?.total_value || 0).toFixed(2)}`;
+                
+                // Load recent scans
+                const collectionResponse = await fetch('/api/collection?limit=5');
+                const collection = await collectionResponse.json();
+                
+                document.getElementById('recentScans').textContent = collection.cards?.length || 0;
+                
+                // Display recent scans
+                const recentContainer = document.getElementById('recentScansContainer');
+                if (collection.cards && collection.cards.length > 0) {
+                    recentContainer.innerHTML = collection.cards.slice(0, 5).map(card => `
+                        <div style="padding: var(--spacing-sm) 0; border-bottom: 1px solid var(--border);">
+                            <div style="font-weight: 600;">${card.name}</div>
+                            <div style="font-size: var(--font-size-sm); color: var(--text-muted);">
+                                ${card.set_name} • ${new Date(card.scan_date).toLocaleDateString()}
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    recentContainer.innerHTML = '<p class="text-muted text-center">No scans yet</p>';
+                }
+                
+                // Display TCG breakdown
+                const tcgContainer = document.getElementById('tcgBreakdown');
+                if (stats.tcg_breakdown && Object.keys(stats.tcg_breakdown).length > 0) {
+                    tcgContainer.innerHTML = Object.entries(stats.tcg_breakdown).map(([tcg, count]) => `
+                        <div style="display: flex; justify-content: space-between; padding: var(--spacing-sm) 0;">
+                            <span style="text-transform: uppercase; font-weight: 600;">${tcg}</span>
+                            <span class="badge badge-info">${count}</span>
+                        </div>
+                    `).join('');
+                } else {
+                    tcgContainer.innerHTML = '<p class="text-muted text-center">No cards yet</p>';
+                }
+                
+                // Display price tiers
+                const tiersContainer = document.getElementById('priceTiers');
+                if (stats.value?.tier_breakdown) {
+                    tiersContainer.innerHTML = Object.entries(stats.value.tier_breakdown)
+                        .filter(([_, data]) => data.count > 0)
+                        .map(([tier, data]) => `
+                            <div style="display: flex; justify-content: space-between; padding: var(--spacing-sm) 0;">
+                                <span>${tier}</span>
+                                <div>
+                                    <span class="badge badge-success">${data.count} cards</span>
+                                    <span style="margin-left: var(--spacing-sm); color: var(--primary);">
+                                        $${data.value.toFixed(2)}
+                                    </span>
+                                </div>
+                            </div>
+                        `).join('');
+                } else {
+                    tiersContainer.innerHTML = '<p class="text-muted text-center">No price data</p>';
+                }
+                
+            } catch (error) {
+                console.error('Error loading dashboard data:', error);
+            }
+        }
+        
+        // Load data on page load
+        loadDashboardData();
+        
+        // Refresh data every 30 seconds
+        setInterval(loadDashboardData, 30000);
+        
+        // Listen for real-time updates
+        if (window.socket) {
+            window.socket.on('card_scanned', () => {
+                loadDashboardData();
+            });
+        }
+    </script>
+</body>
+</html>

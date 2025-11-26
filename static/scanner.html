@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TCG Scan - Card Scanner</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="page-wrapper">
+        <!-- Sidebar (same as index.html) -->
+        <aside class="sidebar">
+            <div class="logo mb-xl">
+                <h2 style="color: var(--primary); font-size: var(--font-size-2xl);">⚡ TCG Scan</h2>
+                <p class="text-muted" style="font-size: var(--font-size-sm);">Scan. Sort. Done.</p>
+            </div>
+            <nav>
+                <ul class="nav">
+                    <li class="nav-item"><a href="index.html" class="nav-link"><span
+                                class="nav-icon">📊</span>Dashboard</a></li>
+                    <li class="nav-item"><a href="scanner.html" class="nav-link active"><span
+                                class="nav-icon">📷</span>Scanner</a></li>
+                    <li class="nav-item"><a href="library.html" class="nav-link"><span class="nav-icon">📚</span>Card
+                            Library</a></li>
+                    <li class="nav-item"><a href="sorting.html" class="nav-link"><span
+                                class="nav-icon">🔄</span>Sorting</a></li>
+                    <li class="nav-item"><a href="import.html" class="nav-link"><span class="nav-icon">⬇️</span>Import
+                            Cards</a></li>
+                </ul>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="header">
+                <h1>Card Scanner</h1>
+                <p class="text-muted">Upload or scan card images for automatic recognition</p>
+            </div>
+
+            <!-- Scanner Controls -->
+            <div class="card mb-xl">
+                <div class="card-header">
+                    <h3 class="card-title">Scan Settings</h3>
+                </div>
+                <div class="card-body">
+                    <div class="flex gap-lg" style="flex-wrap: wrap;">
+                        <div class="form-group" style="flex: 1; min-width: 200px;">
+                            <label class="form-label">Trading Card Game</label>
+                            <select id="tcgSelect" class="form-select">
+                                <option value="mtg">Magic: The Gathering</option>
+                                <option value="pokemon">Pokemon TCG</option>
+                                <option value="yugioh">Yu-Gi-Oh!</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="flex: 1; min-width: 200px;">
+                            <label class="form-label">Scan Mode</label>
+                            <select id="scanMode" class="form-select">
+                                <option value="single">Single Card</option>
+                                <option value="batch">Batch Scan</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="display: flex; align-items: flex-end;">
+                            <label style="display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer;">
+                                <input type="checkbox" id="isFoil" style="width: 20px; height: 20px;">
+                                <span>Foil Card</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Manual Search Section -->
+            <div class="card mb-xl">
+                <div class="card-header">
+                    <h3 class="card-title">🔍 Search by Name</h3>
+                    <span class="text-muted" style="font-size: 14px;">Can't scan? Type the card name</span>
+                </div>
+                <div class="card-body">
+                    <div class="flex gap-md" style="flex-wrap: wrap;">
+                        <div class="form-group" style="flex: 1; min-width: 250px;">
+                            <input type="text" id="manualSearchInput" class="form-input" 
+                                   placeholder="Type card name (e.g., Lightning Bolt, Black Lotus...)"
+                                   style="font-size: 16px; padding: 12px 16px;">
+                        </div>
+                        <button class="btn btn-primary btn-lg" id="manualSearchBtn" style="white-space: nowrap;">
+                            🔍 Search
+                        </button>
+                    </div>
+                    
+                    <!-- Search Results -->
+                    <div id="searchResults" style="margin-top: 16px; display: none;">
+                        <div id="searchResultsContent"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Upload Area -->
+            <div class="card mb-xl">
+                <div class="card-body">
+                    <!-- Camera Section (for HTTPS or localhost only) -->
+                    <div id="cameraSection" style="display: none; margin-bottom: 20px;">
+                        <div id="cameraContainer" style="position: relative; width: 100%; max-width: 400px; margin: 0 auto;">
+                            <video id="cameraPreview" autoplay playsinline style="width: 100%; border-radius: 12px; background: #000;"></video>
+                            
+                            <!-- Card Frame Overlay -->
+                            <div id="cardFrameOverlay" style="
+                                position: absolute;
+                                top: 50%;
+                                left: 50%;
+                                transform: translate(-50%, -50%);
+                                width: 70%;
+                                aspect-ratio: 63/88;
+                                border: 3px solid #00d084;
+                                border-radius: 12px;
+                                box-shadow: 0 0 0 2000px rgba(0,0,0,0.5);
+                                pointer-events: none;
+                            ">
+                                <!-- Corner markers -->
+                                <div style="position: absolute; top: -3px; left: -3px; width: 20px; height: 20px; border-top: 4px solid #00d084; border-left: 4px solid #00d084;"></div>
+                                <div style="position: absolute; top: -3px; right: -3px; width: 20px; height: 20px; border-top: 4px solid #00d084; border-right: 4px solid #00d084;"></div>
+                                <div style="position: absolute; bottom: -3px; left: -3px; width: 20px; height: 20px; border-bottom: 4px solid #00d084; border-left: 4px solid #00d084;"></div>
+                                <div style="position: absolute; bottom: -3px; right: -3px; width: 20px; height: 20px; border-bottom: 4px solid #00d084; border-right: 4px solid #00d084;"></div>
+                                
+                                <!-- Name area indicator -->
+                                <div style="
+                                    position: absolute;
+                                    top: 4%;
+                                    left: 6%;
+                                    right: 15%;
+                                    height: 9%;
+                                    border: 2px dashed #ffcc00;
+                                    border-radius: 4px;
+                                    background: rgba(255, 204, 0, 0.1);
+                                ">
+                                    <span style="position: absolute; top: -20px; left: 0; font-size: 10px; color: #ffcc00; white-space: nowrap;">📝 Card Name Here</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Instructions -->
+                            <div style="position: absolute; bottom: 10px; left: 0; right: 0; text-align: center;">
+                                <span style="background: rgba(0,0,0,0.7); color: white; padding: 8px 16px; border-radius: 20px; font-size: 12px;">
+                                    Align card within the frame
+                                </span>
+                            </div>
+                        </div>
+                        
+                        <!-- Camera Controls -->
+                        <div style="display: flex; justify-content: center; gap: 12px; margin-top: 16px;">
+                            <button class="btn btn-primary btn-lg" id="captureBtn" style="border-radius: 50%; width: 70px; height: 70px; font-size: 24px;">
+                                📸
+                            </button>
+                            <button class="btn btn-secondary" id="switchCameraBtn" style="border-radius: 50%; width: 50px; height: 50px;">
+                                🔄
+                            </button>
+                            <button class="btn btn-secondary" id="closeCameraBtn" style="border-radius: 50%; width: 50px; height: 50px;">
+                                ✕
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Drop Zone -->
+                    <div id="dropZone"
+                        style="border: 2px dashed var(--border); border-radius: var(--radius-lg); padding: var(--spacing-3xl); text-align: center; cursor: pointer; transition: all var(--transition-base);">
+                        <div style="font-size: var(--font-size-3xl); margin-bottom: var(--spacing-md);">📷</div>
+                        <h3>Scan your cards</h3>
+                        <p class="text-muted">Take a photo or upload an image</p>
+                        
+                        <!-- Hidden file inputs -->
+                        <input type="file" id="fileInput" accept="image/*" multiple style="display: none;">
+                        <input type="file" id="cameraInput" accept="image/*" capture="environment" style="display: none;">
+                        
+                        <!-- Card positioning guide image -->
+                        <div style="margin: 20px auto; max-width: 200px; position: relative;">
+                            <div style="
+                                border: 3px solid var(--primary);
+                                border-radius: 12px;
+                                aspect-ratio: 63/88;
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                                background: rgba(0, 208, 132, 0.05);
+                            ">
+                                <div style="text-align: center; padding: 10px;">
+                                    <div style="font-size: 40px; margin-bottom: 8px;">🃏</div>
+                                    <p style="font-size: 11px; color: var(--text-secondary); margin: 0;">Position card<br>like this</p>
+                                </div>
+                                <!-- Name indicator on guide -->
+                                <div style="
+                                    position: absolute;
+                                    top: 4%;
+                                    left: 6%;
+                                    right: 15%;
+                                    height: 9%;
+                                    border: 2px dashed #ffcc00;
+                                    border-radius: 3px;
+                                    background: rgba(255, 204, 0, 0.15);
+                                "></div>
+                            </div>
+                            <p style="font-size: 11px; color: #ffcc00; margin-top: 8px;">⬆️ Yellow = name area</p>
+                        </div>
+                        
+                        <div style="display: flex; justify-content: center; gap: 12px; margin-top: 20px; flex-wrap: wrap;">
+                            <button class="btn btn-primary btn-lg" id="takePhotoBtn">
+                                📷 Take Photo
+                            </button>
+                            <button class="btn btn-secondary btn-lg" id="chooseFileBtn">
+                                📁 Choose File
+                            </button>
+                        </div>
+                        
+                        <p class="text-muted" style="margin-top: 16px; font-size: 12px;">
+                            💡 Tip: Fill the frame with the card, good lighting, avoid glare
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Scan Queue -->
+            <div class="card mb-xl" id="scanQueueCard" style="display: none;">
+                <div class="card-header">
+                    <h3 class="card-title">Scan Queue</h3>
+                    <div class="flex gap-sm">
+                        <button class="btn btn-sm btn-primary" id="startScanBtn">Start Scanning</button>
+                        <button class="btn btn-sm btn-secondary" id="clearQueueBtn">Clear Queue</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div id="scanQueue"></div>
+                </div>
+            </div>
+
+            <!-- Results -->
+            <div class="card" id="resultsCard" style="display: none;">
+                <div class="card-header">
+                    <h3 class="card-title">Scan Results</h3>
+                    <div id="scanProgress" class="flex items-center gap-md">
+                        <span id="progressText">0 / 0</span>
+                        <div class="progress-bar" style="width: 200px;">
+                            <div class="progress-fill" id="progressFill" style="width: 0%;"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div id="resultsContainer"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="app.js"></script>
+    <script>
+        let queuedFiles = [];
+        let scanResults = [];
+
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const scanQueueCard = document.getElementById('scanQueueCard');
+        const resultsCard = document.getElementById('resultsCard');
+
+        // Drag and drop handlers
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.style.borderColor = 'var(--primary)';
+            dropZone.style.background = 'rgba(0, 208, 132, 0.05)';
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.style.borderColor = 'var(--border)';
+            dropZone.style.background = 'transparent';
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.style.borderColor = 'var(--border)';
+            dropZone.style.background = 'transparent';
+            handleFiles(e.dataTransfer.files);
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            handleFiles(e.target.files);
+        });
+
+        function handleFiles(files) {
+            queuedFiles = Array.from(files);
+            displayQueue();
+            scanQueueCard.style.display = 'block';
+        }
+
+        function displayQueue() {
+            const queueContainer = document.getElementById('scanQueue');
+            queueContainer.innerHTML = queuedFiles.map((file, idx) => `
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: var(--spacing-md); border-bottom: 1px solid var(--border);">
+                    <div style="display: flex; align-items: center; gap: var(--spacing-md);">
+                        <span style="font-weight: 600;">${idx + 1}.</span>
+                        <span>${file.name}</span>
+                        <span class="badge badge-info">${(file.size / 1024).toFixed(1)} KB</span>
+                    </div>
+                    <button class="btn btn-sm btn-secondary" onclick="removeFromQueue(${idx})">Remove</button>
+                </div>
+            `).join('');
+        }
+
+        function removeFromQueue(idx) {
+            queuedFiles.splice(idx, 1);
+            if (queuedFiles.length === 0) {
+                scanQueueCard.style.display = 'none';
+            } else {
+                displayQueue();
+            }
+        }
+
+        document.getElementById('startScanBtn').addEventListener('click', async () => {
+            if (queuedFiles.length === 0) return;
+
+            resultsCard.style.display = 'block';
+            scanResults = [];
+
+            const tcg = document.getElementById('tcgSelect').value;
+            const isFoil = document.getElementById('isFoil').checked;
+            const scanMode = document.getElementById('scanMode').value;
+
+            if (scanMode === 'batch') {
+                await batchScan(queuedFiles, tcg, isFoil);
+            } else {
+                for (let i = 0; i < queuedFiles.length; i++) {
+                    await scanSingleCard(queuedFiles[i], tcg, isFoil, i + 1, queuedFiles.length);
+                }
+            }
+
+            queuedFiles = [];
+            scanQueueCard.style.display = 'none';
+        });
+
+        document.getElementById('clearQueueBtn').addEventListener('click', () => {
+            queuedFiles = [];
+            scanQueueCard.style.display = 'none';
+        });
+
+        async function scanSingleCard(file, tcg, isFoil, current, total) {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('tcg', tcg);
+            formData.append('is_foil', isFoil);
+
+            try {
+                const response = await fetch('/api/scan/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+                scanResults.push(result);
+                updateProgress(current, total);
+                displayResults();
+            } catch (error) {
+                console.error('Scan error:', error);
+                scanResults.push({ error: error.message, filename: file.name });
+                updateProgress(current, total);
+                displayResults();
+            }
+        }
+
+        async function batchScan(files, tcg, isFoil) {
+            const formData = new FormData();
+            files.forEach(file => formData.append('files', file));
+            formData.append('tcg', tcg);
+            formData.append('is_foil', isFoil);
+
+            try {
+                const response = await fetch('/api/scan/batch', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                scanResults = data.results;
+                updateProgress(data.total, data.total);
+                displayResults();
+            } catch (error) {
+                console.error('Batch scan error:', error);
+            }
+        }
+
+        function updateProgress(current, total) {
+            document.getElementById('progressText').textContent = `${current} / ${total}`;
+            const percent = (current / total) * 100;
+            document.getElementById('progressFill').style.width = `${percent}%`;
+        }
+
+        function displayResults() {
+            const container = document.getElementById('resultsContainer');
+            container.innerHTML = scanResults.map(result => {
+                if (result.success) {
+                    return `
+                        <div class="card" style="margin-bottom: var(--spacing-md);">
+                            <div class="card-body">
+                                <div class="flex justify-between items-center">
+                                    <div>
+                                        <h4 style="color: var(--primary);">${result.card.name}</h4>
+                                        <p class="text-muted mb-0">${result.card.set_name} • ${result.card.rarity}</p>
+                                    </div>
+                                    <div class="flex gap-sm items-center">
+                                        <span class="badge badge-success">
+                                            ${(result.confidence * 100).toFixed(1)}% confidence
+                                        </span>
+                                        ${result.card.image_url ? `<img src="${result.card.image_url}" style="width: 60px; height: 84px; border-radius: var(--radius-sm); object-fit: cover;">` : ''}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    return `
+                        <div class="card" style="margin-bottom: var(--spacing-md); border-color: var(--error);">
+                            <div class="card-body">
+                                <div class="flex justify-between items-center">
+                                    <div>
+                                        <h4 class="text-error">Recognition Failed</h4>
+                                        <p class="text-muted mb-0">${result.message || result.error}</p>
+                                    </div>
+                                    <span class="badge badge-error">Failed</span>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+            }).join('');
+        }
+
+        // =============================================
+        // MANUAL SEARCH FUNCTIONALITY
+        // =============================================
+        
+        const manualSearchInput = document.getElementById('manualSearchInput');
+        const manualSearchBtn = document.getElementById('manualSearchBtn');
+        const searchResults = document.getElementById('searchResults');
+        const searchResultsContent = document.getElementById('searchResultsContent');
+
+        // Debounce for auto-search
+        let searchTimeout;
+
+        manualSearchInput.addEventListener('input', () => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                const query = manualSearchInput.value.trim();
+                if (query.length >= 3) {
+                    performSearch(query);
+                }
+            }, 500);
+        });
+
+        manualSearchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                performSearch(manualSearchInput.value.trim());
+            }
+        });
+
+        manualSearchBtn.addEventListener('click', () => {
+            performSearch(manualSearchInput.value.trim());
+        });
+
+        async function performSearch(query) {
+            if (!query || query.length < 2) {
+                searchResults.style.display = 'none';
+                return;
+            }
+
+            const tcg = document.getElementById('tcgSelect').value;
+            
+            searchResultsContent.innerHTML = `
+                <div style="text-align: center; padding: 20px;">
+                    <div style="font-size: 24px; animation: pulse 1s infinite;">🔍</div>
+                    <p class="text-muted">Searching...</p>
+                </div>
+            `;
+            searchResults.style.display = 'block';
+
+            try {
+                // Search external API
+                const response = await fetch(`/api/cards/search/api?q=${encodeURIComponent(query)}&tcg=${tcg}`);
+                const data = await response.json();
+
+                if (data.cards && data.cards.length > 0) {
+                    displaySearchResults(data.cards);
+                } else {
+                    searchResultsContent.innerHTML = `
+                        <div style="text-align: center; padding: 20px; background: var(--bg-secondary); border-radius: var(--radius-md);">
+                            <p style="margin: 0;">❌ No cards found for "<strong>${query}</strong>"</p>
+                            <p class="text-muted" style="margin-top: 8px; font-size: 14px;">Try a different spelling or card name</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                searchResultsContent.innerHTML = `
+                    <div style="text-align: center; padding: 20px; color: var(--error);">
+                        <p>Error searching: ${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        function displaySearchResults(cards) {
+            searchResultsContent.innerHTML = cards.map(card => `
+                <div class="card" style="margin-bottom: 12px; cursor: pointer; transition: transform 0.2s;" 
+                     onclick="addCardToCollection('${card.name}', '${card.card_id}')"
+                     onmouseover="this.style.transform='scale(1.02)'"
+                     onmouseout="this.style.transform='scale(1)'">
+                    <div class="card-body" style="padding: 12px;">
+                        <div class="flex gap-md items-center">
+                            ${card.image_url ? `
+                                <img src="${card.image_url}" 
+                                     style="width: 80px; height: 112px; border-radius: var(--radius-sm); object-fit: cover; flex-shrink: 0;">
+                            ` : `
+                                <div style="width: 80px; height: 112px; background: var(--bg-tertiary); border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center;">
+                                    🎴
+                                </div>
+                            `}
+                            <div style="flex: 1; min-width: 0;">
+                                <h4 style="margin: 0 0 4px 0; color: var(--primary);">${card.name}</h4>
+                                <p class="text-muted" style="margin: 0 0 4px 0; font-size: 14px;">${card.set_name || 'Unknown Set'}</p>
+                                <div class="flex gap-sm flex-wrap">
+                                    <span class="badge">${card.rarity || 'Unknown'}</span>
+                                    ${card.price_eur ? `<span class="badge badge-success">€${card.price_eur}</span>` : ''}
+                                    ${card.price_usd && !card.price_eur ? `<span class="badge badge-success">$${card.price_usd}</span>` : ''}
+                                </div>
+                            </div>
+                            <div style="flex-shrink: 0;">
+                                <button class="btn btn-primary btn-sm">➕ Add</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function addCardToCollection(cardName, cardId) {
+            const tcg = document.getElementById('tcgSelect').value;
+            const isFoil = document.getElementById('isFoil').checked;
+            
+            try {
+                // Import card to database and collection
+                const response = await fetch('/api/cards/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: cardName,
+                        tcg: tcg,
+                        is_foil: isFoil
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    // Show success message
+                    showToast(`✅ Added "${cardName}" to collection!`, 'success');
+                    manualSearchInput.value = '';
+                    searchResults.style.display = 'none';
+                } else {
+                    showToast(`❌ Error: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                showToast(`❌ Error: ${error.message}`, 'error');
+            }
+        }
+
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            toast.style.cssText = `
+                position: fixed;
+                bottom: 100px;
+                left: 50%;
+                transform: translateX(-50%);
+                padding: 16px 24px;
+                background: ${type === 'success' ? 'var(--success)' : type === 'error' ? 'var(--error)' : 'var(--bg-secondary)'};
+                color: white;
+                border-radius: var(--radius-md);
+                font-weight: 500;
+                z-index: 10000;
+                animation: slideUp 0.3s ease-out;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            `;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.animation = 'fadeOut 0.3s ease-out';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        // =============================================
+        // CAMERA FUNCTIONALITY
+        // =============================================
+        let cameraStream = null;
+        let currentFacingMode = 'environment';
+
+        const cameraSection = document.getElementById('cameraSection');
+        const cameraPreview = document.getElementById('cameraPreview');
+        const closeCameraBtn = document.getElementById('closeCameraBtn');
+        const captureBtn = document.getElementById('captureBtn');
+        const switchCameraBtn = document.getElementById('switchCameraBtn');
+        const cameraInput = document.getElementById('cameraInput');
+        const takePhotoBtn = document.getElementById('takePhotoBtn');
+        const chooseFileBtn = document.getElementById('chooseFileBtn');
+
+        // Take Photo button - uses native camera on mobile
+        takePhotoBtn.addEventListener('click', () => {
+            cameraInput.click();
+        });
+
+        // Choose File button
+        chooseFileBtn.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        // Handle camera input (native camera photo)
+        cameraInput.addEventListener('change', async (e) => {
+            if (e.target.files && e.target.files[0]) {
+                const file = e.target.files[0];
+                await scanCapturedPhoto(file);
+                // Reset input so same file can be selected again
+                cameraInput.value = '';
+            }
+        });
+
+        // Scan captured photo
+        async function scanCapturedPhoto(file) {
+            const tcg = document.getElementById('tcgSelect').value;
+            const isFoil = document.getElementById('isFoil').checked;
+            
+            // Show loading toast
+            showToast('⏳ Scanning card...', 'info');
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('tcg', tcg);
+            formData.append('is_foil', isFoil);
+
+            try {
+                const response = await fetch('/api/scan/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    showToast(`✅ Found: ${result.card.name}`, 'success');
+                    showCaptureResult(result);
+                } else {
+                    showToast(`❌ ${result.message}`, 'error');
+                }
+            } catch (error) {
+                console.error('Scan error:', error);
+                showToast('❌ Scan failed: ' + error.message, 'error');
+            }
+        }
+
+        // Close camera (for live camera mode)
+        if (closeCameraBtn) {
+            closeCameraBtn.addEventListener('click', () => {
+                stopCamera();
+                cameraSection.style.display = 'none';
+                dropZone.style.display = 'block';
+            });
+        }
+
+        // Switch camera
+        if (switchCameraBtn) {
+            switchCameraBtn.addEventListener('click', async () => {
+                currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
+                await startCamera();
+            });
+        }
+
+        // Capture from live camera
+        if (captureBtn) {
+            captureBtn.addEventListener('click', async () => {
+                if (!cameraStream) return;
+
+                const canvas = document.createElement('canvas');
+                const video = cameraPreview;
+                
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0);
+
+                canvas.toBlob(async (blob) => {
+                    if (!blob) {
+                        showToast('❌ Failed to capture image', 'error');
+                        return;
+                    }
+
+                    const file = new File([blob], `capture_${Date.now()}.jpg`, { type: 'image/jpeg' });
+                    
+                    captureBtn.disabled = true;
+                    captureBtn.textContent = '⏳';
+                    
+                    await scanCapturedPhoto(file);
+                    
+                    captureBtn.disabled = false;
+                    captureBtn.textContent = '📸';
+                }, 'image/jpeg', 0.95);
+            });
+        }
+
+        async function startCamera() {
+            stopCamera();
+
+            const constraints = {
+                video: {
+                    facingMode: currentFacingMode,
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 }
+                }
+            };
+
+            try {
+                cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+                cameraPreview.srcObject = cameraStream;
+            } catch (error) {
+                if (currentFacingMode === 'environment') {
+                    try {
+                        cameraStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                        cameraPreview.srcObject = cameraStream;
+                    } catch (e) {
+                        throw error;
+                    }
+                } else {
+                    throw error;
+                }
+            }
+        }
+
+        function stopCamera() {
+            if (cameraStream) {
+                cameraStream.getTracks().forEach(track => track.stop());
+                cameraStream = null;
+            }
+        }
+
+        function showCaptureResult(result) {
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(0,0,0,0.8);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10001;
+                padding: 20px;
+            `;
+            
+            modal.innerHTML = `
+                <div style="background: var(--bg-secondary); border-radius: 16px; padding: 24px; max-width: 350px; width: 100%; text-align: center;">
+                    ${result.card.image_url ? `<img src="${result.card.image_url}" style="width: 180px; height: auto; border-radius: 8px; margin-bottom: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">` : ''}
+                    <h3 style="color: var(--primary); margin-bottom: 8px;">${result.card.name}</h3>
+                    <p style="color: var(--text-secondary); margin-bottom: 4px;">${result.card.set_name || ''}</p>
+                    <p style="color: var(--text-secondary); margin-bottom: 16px;">${result.card.rarity || ''}</p>
+                    <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+                        <button class="btn btn-primary" id="addToCollectionBtn">➕ Add to Collection</button>
+                        <button class="btn btn-secondary" id="closeModalBtn">✕ Close</button>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            
+            document.getElementById('closeModalBtn').addEventListener('click', () => {
+                modal.remove();
+            });
+            
+            document.getElementById('addToCollectionBtn').addEventListener('click', async () => {
+                await addCardToCollection(result.card.name, result.card.id);
+                modal.remove();
+            });
+            
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.remove();
+                }
+            });
+        }
+
+        // Clean up camera when leaving page
+        window.addEventListener('beforeunload', stopCamera);
+    </script>
+
+    <style>
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        @keyframes slideUp {
+            from { transform: translateX(-50%) translateY(20px); opacity: 0; }
+            to { transform: translateX(-50%) translateY(0); opacity: 1; }
+        }
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+    </style>
+</body>
+
+</html>

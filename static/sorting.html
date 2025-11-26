@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TCG Scan - Sorting</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="page-wrapper">
+        <aside class="sidebar">
+            <div class="logo mb-xl">
+                <h2 style="color: var(--primary); font-size: var(--font-size-2xl);">⚡ TCG Scan</h2>
+                <p class="text-muted" style="font-size: var(--font-size-sm);">Scan. Sort. Done.</p>
+            </div>
+            <nav>
+                <ul class="nav">
+                    <li class="nav-item"><a href="index.html" class="nav-link"><span
+                                class="nav-icon">📊</span>Dashboard</a></li>
+                    <li class="nav-item"><a href="scanner.html" class="nav-link"><span
+                                class="nav-icon">📷</span>Scanner</a></li>
+                    <li class="nav-item"><a href="library.html" class="nav-link"><span class="nav-icon">📚</span>Card
+                            Library</a></li>
+                    <li class="nav-item"><a href="sorting.html" class="nav-link active"><span
+                                class="nav-icon">🔄</span>Sorting</a></li>
+                    <li class="nav-item"><a href="import.html" class="nav-link"><span class="nav-icon">⬇️</span>Import
+                            Cards</a></li>
+                </ul>
+            </nav>
+        </aside>
+
+        <main class="main-content">
+            <div class="header">
+                <h1>Card Sorting</h1>
+                <p class="text-muted">Configure and apply sorting criteria to organize your collection</p>
+            </div>
+
+            <!-- Sorting Configuration -->
+            <div class="card mb-xl">
+                <div class="card-header">
+                    <h3 class="card-title">Sorting Configuration</h3>
+                </div>
+                <div class="card-body">
+                    <div class="form-group">
+                        <label class="form-label">Sorting Criteria</label>
+                        <select id="sortCriteria" class="form-select" onchange="updateSubCriteria()">
+                            <option value="alphabetic">Alphabetic</option>
+                            <option value="set">Set/Expansion</option>
+                            <option value="color">Color</option>
+                            <option value="type">Card Type</option>
+                            <option value="rarity">Rarity</option>
+                            <option value="price">Price Tier</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group" id="subCriteriaGroup">
+                        <label class="form-label">Sub-Criteria</label>
+                        <select id="subCriteria" class="form-select">
+                            <option value="1st_letter">1st Letter</option>
+                            <option value="2nd_letter">2nd Letter</option>
+                            <option value="3rd_letter">3rd Letter</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Number of Bins</label>
+                        <input type="number" id="binCount" class="form-input" value="6" min="2" max="20">
+                    </div>
+
+                    <div class="flex gap-md">
+                        <button class="btn btn-secondary" onclick="previewSorting()">Preview Sorting</button>
+                        <button class="btn btn-primary" onclick="applySorting()">Apply Sorting</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Preview -->
+            <div id="previewCard" class="card mb-xl" style="display: none;">
+                <div class="card-header">
+                    <h3 class="card-title">Sorting Preview</h3>
+                </div>
+                <div class="card-body">
+                    <div id="binPreview" class="card-grid"></div>
+                </div>
+            </div>
+
+            <!-- Results -->
+            <div id="resultsCard" class="card" style="display: none;">
+                <div class="card-header">
+                    <h3 class="card-title">Sorting Complete</h3>
+                </div>
+                <div class="card-body">
+                    <div id="sortingResults"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="app.js"></script>
+    <script>
+        function updateSubCriteria() {
+            const criteria = document.getElementById('sortCriteria').value;
+            const subGroup = document.getElementById('subCriteriaGroup');
+            const subSelect = document.getElementById('subCriteria');
+
+            if (criteria === 'alphabetic') {
+                subGroup.style.display = 'block';
+                subSelect.innerHTML = `
+                    <option value="1st_letter">1st Letter</option>
+                    <option value="2nd_letter">2nd Letter</option>
+                    <option value="3rd_letter">3rd Letter</option>
+                `;
+            } else {
+                subGroup.style.display = 'none';
+            }
+        }
+
+        async function previewSorting() {
+            const criteria = document.getElementById('sortCriteria').value;
+            const subCriteria = document.getElementById('subCriteria').value;
+            const binCount = parseInt(document.getElementById('binCount').value);
+
+            try {
+                const response = await fetch('/api/sort/preview', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ criteria, sub_criteria: subCriteria, bin_count: binCount })
+                });
+
+                const data = await response.json();
+                displayPreview(data.bins);
+                document.getElementById('previewCard').style.display = 'block';
+            } catch (error) {
+                console.error('Preview error:', error);
+                showNotification('Error generating preview', 'error');
+            }
+        }
+
+        async function applySorting() {
+            const criteria = document.getElementById('sortCriteria').value;
+            const subCriteria = document.getElementById('subCriteria').value;
+            const binCount = parseInt(document.getElementById('binCount').value);
+
+            try {
+                const response = await fetch('/api/sort/apply', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ criteria, sub_criteria: subCriteria, bin_count: binCount })
+                });
+
+                const data = await response.json();
+                displayResults(data);
+                document.getElementById('resultsCard').style.display = 'block';
+                showNotification('Sorting applied successfully!', 'success');
+            } catch (error) {
+                console.error('Sorting error:', error);
+                showNotification('Error applying sorting', 'error');
+            }
+        }
+
+        function displayPreview(bins) {
+            const container = document.getElementById('binPreview');
+
+            container.innerHTML = Object.entries(bins).map(([binNum, binData]) => `
+                <div class="card">
+                    <div class="card-header">
+                        <h4 class="card-title">Bin ${binNum}</h4>
+                        <span class="badge badge-primary">${binData.count} cards</span>
+                    </div>
+                    <div class="card-body">
+                        <div style="font-weight: 600; margin-bottom: var(--spacing-md); color: var(--primary);">
+                            ${binData.label}
+                        </div>
+                        ${binData.cards.map(card => `
+                            <div style="padding: var(--spacing-xs) 0; font-size: var(--font-size-sm); color: var(--text-muted);">
+                                • ${card.name}
+                            </div>
+                        `).join('')}
+                        ${binData.count > 5 ? `<div style="padding: var(--spacing-xs) 0; font-size: var(--font-size-sm); color: var(--text-muted);">... and ${binData.count - 5} more</div>` : ''}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function displayResults(data) {
+            const container = document.getElementById('sortingResults');
+
+            container.innerHTML = `
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value">${data.total_cards}</div>
+                        <div class="stat-label">Total Cards Sorted</div>
+                    </div>
+                    ${Object.entries(data.bins).map(([binNum, count]) => `
+                        <div class="stat-card">
+                            <div class="stat-value">${count}</div>
+                            <div class="stat-label">Bin ${binNum}</div>
+                        </div>
+                    `).join('')}
+                </div>
+                <div class="mt-lg text-center">
+                    <p class="text-success" style="font-size: var(--font-size-lg);">
+                        ✓ Cards have been assigned to bins and are ready for physical sorting
+                    </p>
+                </div>
+            `;
+        }
+
+        // Initialize
+        updateSubCriteria();
+    </script>
+</body>
+
+</html>

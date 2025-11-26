@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>TCG Scan - Card Library</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* View Toggle Buttons */
+        .view-toggle {
+            display: flex;
+            gap: 4px;
+            background: var(--bg-tertiary);
+            padding: 4px;
+            border-radius: var(--radius-md);
+        }
+
+        .view-btn {
+            padding: 8px 16px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            border-radius: var(--radius-sm);
+            font-size: 18px;
+            color: var(--text-secondary);
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .view-btn:hover {
+            background: var(--bg-secondary);
+        }
+
+        .view-btn.active {
+            background: var(--primary);
+            color: white;
+        }
+
+        .view-btn .label {
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        @media (max-width: 768px) {
+            .view-btn .label {
+                display: none;
+            }
+        }
+
+        /* Grid View (Default) */
+        .library-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 20px;
+        }
+
+        .library-grid .card-item {
+            background: var(--bg-secondary);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .library-grid .card-item:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+        }
+
+        .library-grid .card-image {
+            width: 100%;
+            aspect-ratio: 63/88;
+            background: var(--bg-tertiary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .library-grid .card-image img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .library-grid .card-image .placeholder {
+            font-size: 48px;
+            opacity: 0.3;
+        }
+
+        .library-grid .card-info {
+            padding: 16px;
+        }
+
+        .library-grid .card-name {
+            font-weight: 700;
+            font-size: 16px;
+            margin-bottom: 4px;
+        }
+
+        .library-grid .card-set {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+        }
+
+        .library-grid .card-badges {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+        }
+
+        .library-grid .card-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .library-grid .card-match {
+            color: var(--success);
+            font-weight: 600;
+        }
+
+        .library-grid .card-tcg {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+
+        .library-grid .card-price {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--success);
+            margin: 8px 0;
+        }
+
+        .library-grid .card-image {
+            position: relative;
+        }
+
+        .quantity-badge {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: var(--primary);
+            color: white;
+            font-size: 12px;
+            font-weight: 700;
+            padding: 4px 8px;
+            border-radius: var(--radius-full);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Horizontal View */
+        .library-horizontal {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .library-horizontal .card-item {
+            background: var(--bg-secondary);
+            border-radius: var(--radius-lg);
+            display: flex;
+            overflow: hidden;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .library-horizontal .card-item:hover {
+            transform: translateX(4px);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+        }
+
+        .library-horizontal .card-image {
+            width: 100px;
+            min-height: 140px;
+            background: var(--bg-tertiary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            position: relative;
+        }
+
+        .library-horizontal .card-image img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .library-horizontal .card-image .placeholder {
+            font-size: 32px;
+            opacity: 0.3;
+        }
+
+        .library-horizontal .card-content {
+            flex: 1;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 4px;
+        }
+
+        .library-horizontal .card-header-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 12px;
+        }
+
+        .library-horizontal .card-name {
+            font-weight: 700;
+            font-size: 16px;
+        }
+
+        .library-horizontal .card-price-tag {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--success);
+            white-space: nowrap;
+        }
+
+        .library-horizontal .card-match {
+            font-size: 13px;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: var(--radius-full);
+            background: linear-gradient(135deg, var(--success), #00a86b);
+            color: white;
+            white-space: nowrap;
+        }
+
+        .library-horizontal .card-set {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .library-horizontal .card-meta {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .library-horizontal .card-meta .separator {
+            margin: 0 6px;
+            opacity: 0.5;
+        }
+
+        .library-horizontal .card-badges {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-top: 4px;
+        }
+
+        .library-horizontal .card-date {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        .badge.quantity {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+        }
+
+        /* Compact View */
+        .library-compact {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            background: var(--bg-secondary);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+        }
+
+        .library-compact .card-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 16px;
+            gap: 12px;
+            background: var(--bg-secondary);
+            transition: background 0.15s;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .library-compact .card-item:last-child {
+            border-bottom: none;
+        }
+
+        .library-compact .card-item:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .library-compact .card-image {
+            width: 40px;
+            height: 56px;
+            background: var(--bg-tertiary);
+            border-radius: var(--radius-sm);
+            overflow: hidden;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .library-compact .card-image img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .library-compact .card-image .placeholder {
+            font-size: 16px;
+            opacity: 0.3;
+        }
+
+        .library-compact .card-name {
+            flex: 1;
+            font-weight: 600;
+            font-size: 14px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            min-width: 100px;
+        }
+
+        .library-compact .card-set {
+            font-size: 12px;
+            color: var(--text-secondary);
+            min-width: 100px;
+            max-width: 150px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .library-compact .card-badges {
+            display: flex;
+            gap: 4px;
+        }
+
+        .library-compact .badge {
+            font-size: 10px;
+            padding: 2px 6px;
+        }
+
+        .library-compact .card-qty {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--primary);
+            min-width: 30px;
+            text-align: center;
+        }
+
+        .library-compact .card-price-compact {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--success);
+            min-width: 60px;
+            text-align: right;
+        }
+
+        .library-compact .card-date-compact {
+            font-size: 11px;
+            color: var(--text-secondary);
+            min-width: 80px;
+            text-align: right;
+        }
+
+        .library-compact .card-match {
+            font-size: 12px;
+            color: var(--success);
+            font-weight: 600;
+            min-width: 60px;
+            text-align: right;
+        }
+
+        @media (max-width: 768px) {
+            .library-compact .card-set,
+            .library-compact .card-date-compact {
+                display: none;
+            }
+        }
+
+        /* Common Badge Styles */
+        .badge {
+            font-size: 11px;
+            padding: 3px 8px;
+            border-radius: var(--radius-sm);
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .badge.tcg {
+            background: var(--primary);
+            color: white;
+        }
+
+        .badge.rarity {
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+            border: 1px solid var(--border);
+        }
+
+        .badge.rarity.mythic {
+            background: linear-gradient(135deg, #ff6b35, #f7931a);
+            color: white;
+            border: none;
+        }
+
+        .badge.rarity.rare {
+            background: linear-gradient(135deg, #c9a227, #f0d060);
+            color: #1a1a1a;
+            border: none;
+        }
+
+        .badge.foil {
+            background: linear-gradient(135deg, #a855f7, #ec4899);
+            color: white;
+        }
+
+        /* Stats Bar */
+        .stats-bar {
+            display: flex;
+            gap: 16px;
+            padding: 12px 16px;
+            background: var(--bg-tertiary);
+            border-radius: var(--radius-md);
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
+        .stat-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .stat-item .value {
+            font-weight: 700;
+            font-size: 18px;
+            color: var(--primary);
+        }
+
+        .stat-item .label {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        /* Mobile bottom nav */
+        .mobile-nav {
+            display: none;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border);
+            padding: 8px 0;
+            padding-bottom: max(8px, env(safe-area-inset-bottom));
+            z-index: 100;
+        }
+
+        .mobile-nav-links {
+            display: flex;
+            justify-content: space-around;
+        }
+
+        .mobile-nav-link {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 11px;
+            padding: 4px 12px;
+        }
+
+        .mobile-nav-link.active {
+            color: var(--primary);
+        }
+
+        .mobile-nav-link .icon {
+            font-size: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .mobile-nav {
+                display: block;
+            }
+            
+            .sidebar {
+                display: none;
+            }
+            
+            .main-content {
+                margin-left: 0;
+                padding: 12px;
+                padding-bottom: 80px;
+            }
+            
+            .library-grid {
+                grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+                gap: 12px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="page-wrapper">
+        <aside class="sidebar">
+            <div class="logo mb-xl">
+                <h2 style="color: var(--primary); font-size: var(--font-size-2xl);">⚡ TCG Scan</h2>
+                <p class="text-muted" style="font-size: var(--font-size-sm);">Scan. Sort. Done.</p>
+            </div>
+            <nav>
+                <ul class="nav">
+                    <li class="nav-item"><a href="index.html" class="nav-link"><span
+                                class="nav-icon">📊</span>Dashboard</a></li>
+                    <li class="nav-item"><a href="scanner.html" class="nav-link"><span
+                                class="nav-icon">📷</span>Scanner</a></li>
+                    <li class="nav-item"><a href="library.html" class="nav-link active"><span
+                                class="nav-icon">📚</span>Card Library</a></li>
+                    <li class="nav-item"><a href="sorting.html" class="nav-link"><span
+                                class="nav-icon">🔄</span>Sorting</a></li>
+                    <li class="nav-item"><a href="import.html" class="nav-link"><span class="nav-icon">⬇️</span>Import
+                            Cards</a></li>
+                </ul>
+            </nav>
+        </aside>
+
+        <main class="main-content">
+            <div class="header">
+                <h1>📚 Card Library</h1>
+                <p class="text-muted">Browse and manage your scanned card collection</p>
+            </div>
+
+            <!-- Stats Bar -->
+            <div class="stats-bar" id="statsBar">
+                <div class="stat-item">
+                    <span class="value" id="totalCards">0</span>
+                    <span class="label">Total Cards</span>
+                </div>
+                <div class="stat-item">
+                    <span class="value" id="uniqueCards">0</span>
+                    <span class="label">Unique</span>
+                </div>
+                <div class="stat-item">
+                    <span class="value" id="foilCards">0</span>
+                    <span class="label">Foils</span>
+                </div>
+            </div>
+
+            <!-- Search, Filters and View Toggle -->
+            <div class="card mb-xl">
+                <div class="card-body">
+                    <div class="flex gap-md" style="flex-wrap: wrap; align-items: flex-end;">
+                        <div class="form-group" style="flex: 2; min-width: 200px;">
+                            <label class="form-label">Search</label>
+                            <input type="text" id="searchInput" class="form-input"
+                                placeholder="Search cards by name...">
+                        </div>
+                        <div class="form-group" style="flex: 1; min-width: 130px;">
+                            <label class="form-label">TCG</label>
+                            <select id="tcgFilter" class="form-select">
+                                <option value="">All TCGs</option>
+                                <option value="mtg">Magic: The Gathering</option>
+                                <option value="pokemon">Pokemon TCG</option>
+                                <option value="yugioh">Yu-Gi-Oh!</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="flex: 1; min-width: 130px;">
+                            <label class="form-label">Rarity</label>
+                            <select id="rarityFilter" class="form-select">
+                                <option value="">All Rarities</option>
+                                <option value="common">Common</option>
+                                <option value="uncommon">Uncommon</option>
+                                <option value="rare">Rare</option>
+                                <option value="mythic">Mythic</option>
+                            </select>
+                        </div>
+                        <div class="view-toggle">
+                            <button class="view-btn active" onclick="setView('grid')" id="viewGrid" title="Grid View">
+                                <span>▦</span>
+                                <span class="label">Grid</span>
+                            </button>
+                            <button class="view-btn" onclick="setView('horizontal')" id="viewHorizontal" title="Horizontal View">
+                                <span>☰</span>
+                                <span class="label">List</span>
+                            </button>
+                            <button class="view-btn" onclick="setView('compact')" id="viewCompact" title="Compact View">
+                                <span>≡</span>
+                                <span class="label">Compact</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Card Container -->
+            <div id="cardLibrary" class="library-grid"></div>
+
+            <!-- Empty State -->
+            <div id="emptyState" class="card" style="display: none;">
+                <div class="card-body text-center" style="padding: 48px 24px;">
+                    <div style="font-size: 48px; margin-bottom: 16px;">📚</div>
+                    <h3>No cards in library</h3>
+                    <p class="text-muted">Start scanning cards to build your collection</p>
+                    <a href="scanner.html" class="btn btn-primary mt-lg">Go to Scanner</a>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Mobile Bottom Navigation -->
+    <nav class="mobile-nav">
+        <div class="mobile-nav-links">
+            <a href="index.html" class="mobile-nav-link">
+                <span class="icon">📊</span>
+                <span>Dashboard</span>
+            </a>
+            <a href="scanner.html" class="mobile-nav-link">
+                <span class="icon">📷</span>
+                <span>Scanner</span>
+            </a>
+            <a href="library.html" class="mobile-nav-link active">
+                <span class="icon">📚</span>
+                <span>Library</span>
+            </a>
+            <a href="sorting.html" class="mobile-nav-link">
+                <span class="icon">🔄</span>
+                <span>Sorting</span>
+            </a>
+        </div>
+    </nav>
+
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="app.js"></script>
+    <script>
+        let currentView = 'grid';
+        let allCards = [];
+
+        async function loadLibrary() {
+            const searchQuery = document.getElementById('searchInput').value;
+            const tcg = document.getElementById('tcgFilter').value;
+            const rarity = document.getElementById('rarityFilter').value;
+
+            try {
+                const params = new URLSearchParams();
+                if (tcg) params.append('tcg', tcg);
+
+                const response = await fetch(`/api/collection?${params.toString()}`);
+                const data = await response.json();
+
+                let cards = data.cards || [];
+                allCards = cards;
+
+                // Client-side filtering
+                if (searchQuery) {
+                    cards = cards.filter(card =>
+                        card.name.toLowerCase().includes(searchQuery.toLowerCase())
+                    );
+                }
+
+                if (rarity) {
+                    cards = cards.filter(card =>
+                        card.rarity && card.rarity.toLowerCase() === rarity.toLowerCase()
+                    );
+                }
+
+                updateStats(data);
+                displayCards(cards);
+            } catch (error) {
+                console.error('Error loading library:', error);
+            }
+        }
+
+        function updateStats(data) {
+            // Use total_cards from backend for actual count
+            const totalCards = data.total_cards || data.cards.length;
+            document.getElementById('totalCards').textContent = totalCards;
+            
+            // Unique cards = number of grouped entries
+            document.getElementById('uniqueCards').textContent = data.cards.length;
+            
+            // Count foils
+            const foils = data.cards.filter(c => c.is_foil).reduce((sum, c) => sum + (c.quantity || 1), 0);
+            document.getElementById('foilCards').textContent = foils;
+        }
+
+        function setView(view) {
+            currentView = view;
+            
+            // Update buttons
+            document.querySelectorAll('.view-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById('view' + view.charAt(0).toUpperCase() + view.slice(1)).classList.add('active');
+            
+            // Update container class
+            const container = document.getElementById('cardLibrary');
+            container.className = 'library-' + view;
+            
+            // Re-render cards
+            displayCards(getFilteredCards());
+            
+            // Save preference
+            localStorage.setItem('libraryView', view);
+        }
+
+        function getFilteredCards() {
+            const searchQuery = document.getElementById('searchInput').value;
+            const rarity = document.getElementById('rarityFilter').value;
+            
+            let cards = allCards;
+            
+            if (searchQuery) {
+                cards = cards.filter(card =>
+                    card.name.toLowerCase().includes(searchQuery.toLowerCase())
+                );
+            }
+
+            if (rarity) {
+                cards = cards.filter(card =>
+                    card.rarity && card.rarity.toLowerCase() === rarity.toLowerCase()
+                );
+            }
+            
+            return cards;
+        }
+
+        function getRarityClass(rarity) {
+            if (!rarity) return '';
+            const r = rarity.toLowerCase();
+            if (r.includes('mythic')) return 'mythic';
+            if (r.includes('rare')) return 'rare';
+            return '';
+        }
+
+        function getTcgLabel(tcg) {
+            if (!tcg) return 'TCG';
+            const t = tcg.toLowerCase();
+            if (t === 'mtg' || t === 'magic') return 'MTG';
+            if (t === 'pokemon') return 'PKM';
+            if (t === 'yugioh') return 'YGO';
+            return tcg.toUpperCase();
+        }
+
+        function getTcgFullName(tcg) {
+            if (!tcg) return 'Unknown';
+            const t = tcg.toLowerCase();
+            if (t === 'mtg' || t === 'magic') return 'Magic: The Gathering';
+            if (t === 'pokemon') return 'Pokémon TCG';
+            if (t === 'yugioh') return 'Yu-Gi-Oh!';
+            return tcg;
+        }
+
+        function formatPrice(price) {
+            if (!price && price !== 0) return '-';
+            return '€' + parseFloat(price).toFixed(2);
+        }
+
+        function displayCards(cards) {
+            const container = document.getElementById('cardLibrary');
+            const emptyState = document.getElementById('emptyState');
+
+            if (cards.length === 0) {
+                container.innerHTML = '';
+                emptyState.style.display = 'block';
+                return;
+            }
+
+            emptyState.style.display = 'none';
+
+            if (currentView === 'grid') {
+                container.innerHTML = cards.map(card => {
+                    const qty = card.quantity || 1;
+                    return `
+                    <div class="card-item">
+                        <div class="card-image">
+                            ${card.image_url 
+                                ? `<img src="${card.image_url}" alt="${card.name}">` 
+                                : '<span class="placeholder">🃏</span>'}
+                            ${qty > 1 ? `<span class="quantity-badge">x${qty}</span>` : ''}
+                        </div>
+                        <div class="card-info">
+                            <div class="card-name">${card.name}</div>
+                            <div class="card-set">${card.set_name || 'Unknown Set'}</div>
+                            <div class="card-tcg">${getTcgFullName(card.tcg)}</div>
+                            <div class="card-badges">
+                                <span class="badge tcg">${getTcgLabel(card.tcg)}</span>
+                                ${card.rarity ? `<span class="badge rarity ${getRarityClass(card.rarity)}">${card.rarity}</span>` : ''}
+                                ${card.is_foil ? '<span class="badge foil">Foil</span>' : ''}
+                            </div>
+                            <div class="card-price">${formatPrice(card.price_eur || card.price_usd)}</div>
+                            <div class="card-footer">
+                                <span>📅 ${new Date(card.scan_date).toLocaleDateString()}</span>
+                            </div>
+                        </div>
+                    </div>
+                `}).join('');
+            } else if (currentView === 'horizontal') {
+                container.innerHTML = cards.map(card => {
+                    const qty = card.quantity || 1;
+                    return `
+                    <div class="card-item">
+                        <div class="card-image">
+                            ${card.image_url 
+                                ? `<img src="${card.image_url}" alt="${card.name}">` 
+                                : '<span class="placeholder">🃏</span>'}
+                            ${qty > 1 ? `<span class="quantity-badge">x${qty}</span>` : ''}
+                        </div>
+                        <div class="card-content">
+                            <div class="card-header-row">
+                                <div class="card-name">${card.name}</div>
+                                <div class="card-price-tag">${formatPrice(card.price_eur || card.price_usd)}</div>
+                            </div>
+                            <div class="card-set">${card.set_name || 'Unknown Set'}</div>
+                            <div class="card-meta">
+                                <span class="tcg-name">${getTcgFullName(card.tcg)}</span>
+                                <span class="separator">•</span>
+                                <span class="rarity-name">${card.rarity || 'Unknown'}</span>
+                            </div>
+                            <div class="card-badges">
+                                <span class="badge tcg">${getTcgLabel(card.tcg)}</span>
+                                ${card.rarity ? `<span class="badge rarity ${getRarityClass(card.rarity)}">${card.rarity}</span>` : ''}
+                                ${card.is_foil ? '<span class="badge foil">Foil</span>' : ''}
+                                ${qty > 1 ? `<span class="badge quantity">x${qty}</span>` : ''}
+                            </div>
+                            <div class="card-date">📅 ${new Date(card.scan_date).toLocaleDateString()}</div>
+                        </div>
+                    </div>
+                `}).join('');
+            } else if (currentView === 'compact') {
+                container.innerHTML = cards.map(card => {
+                    const qty = card.quantity || 1;
+                    return `
+                    <div class="card-item">
+                        <div class="card-image">
+                            ${card.image_url 
+                                ? `<img src="${card.image_url}" alt="${card.name}">` 
+                                : '<span class="placeholder">🃏</span>'}
+                        </div>
+                        <div class="card-name">${card.name}</div>
+                        <div class="card-set">${card.set_name || 'Unknown Set'}</div>
+                        <div class="card-badges">
+                            <span class="badge tcg">${getTcgLabel(card.tcg)}</span>
+                            ${card.rarity ? `<span class="badge rarity ${getRarityClass(card.rarity)}">${card.rarity}</span>` : ''}
+                        </div>
+                        <div class="card-qty">${qty > 1 ? `x${qty}` : ''}</div>
+                        <div class="card-price-compact">${formatPrice(card.price_eur || card.price_usd)}</div>
+                        <div class="card-date-compact">${new Date(card.scan_date).toLocaleDateString()}</div>
+                    </div>
+                `}).join('');
+            }
+        }
+
+        // Load saved view preference
+        const savedView = localStorage.getItem('libraryView');
+        if (savedView) {
+            setView(savedView);
+        }
+
+        // Load library on page load
+        loadLibrary();
+
+        // Search on typing (debounced)
+        let searchTimeout;
+        document.getElementById('searchInput').addEventListener('input', () => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                displayCards(getFilteredCards());
+            }, 300);
+        });
+
+        // Filter on change
+        document.getElementById('tcgFilter').addEventListener('change', loadLibrary);
+        document.getElementById('rarityFilter').addEventListener('change', () => {
+            displayCards(getFilteredCards());
+        });
+
+        // Search on enter key
+        document.getElementById('searchInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                displayCards(getFilteredCards());
+            }
+        });
+
+        // Real-time updates
+        if (window.socket) {
+            window.socket.on('card_scanned', () => {
+                loadLibrary();
+            });
+        }
+    </script>
+</body>
+
+</html>
