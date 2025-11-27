@@ -90,9 +90,9 @@ def setup_logger(name: str = 'TCG Scan') -> logging.Logger:
     logger.setLevel(getattr(logging, LOG_LEVEL, logging.DEBUG))
     logger.propagate = False
     
-    # Console Handler with colors
+    # Console Handler with colors - INFO level to reduce spam
     console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(logging.DEBUG)
+    console_handler.setLevel(logging.WARNING)  # Only show warnings and errors in console
     console_formatter = ColoredFormatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)

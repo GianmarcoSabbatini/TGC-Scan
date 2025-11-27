@@ -1320,10 +1320,35 @@ def handle_disconnect():
 # ============================================================================
 
 if __name__ == '__main__':
+    import argparse
+    import os
+    
+    parser = argparse.ArgumentParser(description='TGC Scan Server')
+    parser.add_argument('--https', action='store_true', help='Enable HTTPS for camera access on mobile')
+    parser.add_argument('--port', type=int, default=5000, help='Port to run on')
+    args = parser.parse_args()
+    
     logger.info("=" * 60)
     logger.info("TCG Scan Server Starting")
     logger.info("=" * 60)
-    logger.info(f"Server starting on http://localhost:5000")
+    
+    # Check for SSL
+    ssl_context = None
+    protocol = "http"
+    
+    if args.https:
+        # Use 'adhoc' for automatic self-signed certificate (most compatible)
+        try:
+            ssl_context = 'adhoc'
+            protocol = "https"
+            logger.info("HTTPS enabled with adhoc certificate - Camera access available on mobile!")
+        except Exception as e:
+            logger.warning(f"Could not enable HTTPS: {e}")
+            ssl_context = None
+            protocol = "http"
+    
+    logger.info(f"Server starting on {protocol}://localhost:{args.port}")
+    logger.info(f"Network access: {protocol}://192.168.1.9:{args.port}")
     logger.info(f"Database: {config.DATABASE_PATH}")
     logger.info(f"Upload folder: {config.UPLOAD_FOLDER}")
     logger.info("=" * 60)
@@ -1332,4 +1357,6 @@ if __name__ == '__main__':
     price_scheduler.start()
     logger.info("Price update scheduler started (updates every 6 hours)")
     
-    socketio.run(app, debug=config.DEBUG, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)
+    socketio.run(app, debug=config.DEBUG, host='0.0.0.0', port=args.port, 
+                 ssl_context=ssl_context, allow_unsafe_werkzeug=True)
+

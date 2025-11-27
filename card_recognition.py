@@ -1,6 +1,7 @@
 """
 TCG Scan - Card Recognition Engine
-Uses OCR + API search for card recognition from photos
+Uses OCR + API search for card recognition from photos.
+Now includes fuzzy matching (SymSpell) to correct OCR errors.
 """
 import cv2
 import numpy as np
@@ -13,6 +14,15 @@ import config
 from database import Card, get_db
 from logger import get_logger, PerformanceLogger
 import re
+
+# Import fuzzy matcher for OCR error correction
+try:
+    from fuzzy_matcher import FuzzyCardMatcher, fuzzy_search_card, fuzzy_search_with_confidence
+    FUZZY_MATCHER_AVAILABLE = True
+    print("[OCR] Fuzzy matcher loaded successfully")
+except ImportError as e:
+    FUZZY_MATCHER_AVAILABLE = False
+    print(f"[OCR] Fuzzy matcher not available: {e}")
 
 # Try to import pytesseract for OCR
 try:
@@ -60,6 +70,16 @@ class CardRecognitionEngine:
         # Import API integrations
         from api_integrations import ScryfallAPI
         self.scryfall_api = ScryfallAPI()
+        
+        # Initialize fuzzy matcher for OCR error correction
+        self.fuzzy_matcher = None
+        if FUZZY_MATCHER_AVAILABLE:
+            try:
+                self.fuzzy_matcher = FuzzyCardMatcher()
+                logger.info("Fuzzy matcher initialized for OCR error correction")
+            except Exception as e:
+                logger.warning(f"Could not initialize fuzzy matcher: {e}")
+        
         logger.info("CardRecognitionEngine initialized")
         
     def preprocess_image(self, image_path: str) -> Tuple[np.ndarray, Image.Image, np.ndarray]:
@@ -489,27 +509,107 @@ class CardRecognitionEngine:
             logger.error(f"OCR error: {e}")
             return ""
     
-    def search_card_by_name(self, card_name: str) -> Optional[Dict]:
+    def search_card_by_name(self, card_name: str, use_fuzzy: bool = True) -> Optional[Dict]:
         """
         Search for a Magic: The Gathering card by name using Scryfall API.
-        Returns card data dict or None.
+        Now includes fuzzy matching to correct OCR errors before API search.
+        
+        Args:
+            card_name: The card name from OCR (may contain errors)
+            use_fuzzy: Whether to use fuzzy matching to correct errors
+            
+        Returns:
+            Card data dict or None
         """
         if not card_name or len(card_name) < 2:
             return None
         
         logger.debug(f"Searching card by name: '{card_name}'")
         
+        # Step 1: Try fuzzy matching first to correct OCR errors
+        corrected_name = card_name
+        fuzzy_confidence = 0.0
+        
+        if use_fuzzy and self.fuzzy_matcher:
+            try:
+                matched_name, confidence = self.fuzzy_matcher.search_with_confidence(card_name)
+                if matched_name:
+                    corrected_name = matched_name
+                    fuzzy_confidence = confidence
+                    if matched_name != card_name:
+                        logger.info(f"Fuzzy correction: '{card_name}' -> '{matched_name}' (conf={confidence:.2f})")
+            except Exception as e:
+                logger.warning(f"Fuzzy matching failed: {e}")
+        
+        # Step 2: Search via Scryfall API with the (possibly corrected) name
         try:
-            result = self.scryfall_api.search_card_by_name(card_name)
+            result = self.scryfall_api.search_card_by_name(corrected_name)
             
             if result:
                 logger.info(f"Found card via API: {result.get('name')}")
+                # Add fuzzy matching metadata
+                result['_fuzzy_corrected'] = corrected_name != card_name
+                result['_original_ocr'] = card_name
+                result['_fuzzy_confidence'] = fuzzy_confidence
                 return result
+            
+            # If corrected name didn't work and it was different, try original
+            if corrected_name != card_name:
+                logger.debug(f"Corrected name failed, trying original: '{card_name}'")
+                result = self.scryfall_api.search_card_by_name(card_name)
+                if result:
+                    logger.info(f"Found card via API (original): {result.get('name')}")
+                    return result
             
         except Exception as e:
             logger.error(f"API search error: {e}")
         
         return None
+    
+    def search_card_with_suggestions(self, card_name: str) -> Dict:
+        """
+        Search for a card and return suggestions if no exact match found.
+        
+        Returns:
+            Dict with 'card' (if found) and 'suggestions' list
+        """
+        result = {'card': None, 'suggestions': [], 'corrected_name': None}
+        
+        if not card_name or len(card_name) < 2:
+            return result
+        
+        # Try fuzzy matching
+        if self.fuzzy_matcher:
+            try:
+                # Get the best match
+                matched_name, confidence = self.fuzzy_matcher.search_with_confidence(card_name)
+                if matched_name:
+                    result['corrected_name'] = matched_name
+                    
+                    # Try API search with corrected name
+                    card_data = self.scryfall_api.search_card_by_name(matched_name)
+                    if card_data:
+                        result['card'] = card_data
+                        result['card']['_fuzzy_confidence'] = confidence
+                        return result
+                
+                # Get multiple suggestions
+                suggestions = self.fuzzy_matcher.get_suggestions(card_name, max_results=5)
+                result['suggestions'] = [name for name, dist in suggestions]
+                
+            except Exception as e:
+                logger.warning(f"Fuzzy search failed: {e}")
+        
+        # Fallback to direct API search
+        if not result['card']:
+            try:
+                card_data = self.scryfall_api.search_card_by_name(card_name)
+                if card_data:
+                    result['card'] = card_data
+            except Exception as e:
+                logger.error(f"API search error: {e}")
+        
+        return result
 
     def recognize_from_photo(self, image_path: str) -> Dict:
         """
@@ -545,20 +645,61 @@ class CardRecognitionEngine:
                 extracted_name = self.extract_text_ocr(name_region)
                 
                 if extracted_name and len(extracted_name) >= 3:
-                    # Search by extracted name
-                    card_data = self.search_card_by_name(extracted_name)
+                    logger.info(f"OCR extracted: '{extracted_name}'")
+                    
+                    # Step 1: Try fuzzy matching to correct OCR errors first
+                    corrected_name = extracted_name
+                    fuzzy_confidence = 0.0
+                    fuzzy_corrected = False
+                    
+                    if self.fuzzy_matcher:
+                        try:
+                            matched_name, confidence = self.fuzzy_matcher.search_with_confidence(extracted_name)
+                            if matched_name:
+                                corrected_name = matched_name
+                                fuzzy_confidence = confidence
+                                fuzzy_corrected = (matched_name.lower() != extracted_name.lower())
+                                if fuzzy_corrected:
+                                    logger.info(f"Fuzzy correction: '{extracted_name}' -> '{matched_name}' (conf={confidence:.2f})")
+                        except Exception as e:
+                            logger.warning(f"Fuzzy matching error: {e}")
+                    
+                    # Step 2: Search by corrected name
+                    card_data = self.search_card_by_name(corrected_name, use_fuzzy=False)
                     
                     if card_data:
+                        # Calculate confidence based on fuzzy match quality
+                        confidence = 0.85 if not fuzzy_corrected else max(0.70, fuzzy_confidence)
+                        method = 'ocr_fuzzy' if fuzzy_corrected else 'ocr'
+                        
                         return {
                             'success': True,
                             'card': card_data,
-                            'confidence': 0.85,  # OCR match
-                            'method': 'ocr',
+                            'confidence': confidence,
+                            'method': method,
                             'extracted_name': extracted_name,
+                            'corrected_name': corrected_name if fuzzy_corrected else None,
                             'message': f"Card recognized via OCR: {card_data.get('name')}"
                         }
                     
-                    # Try fuzzy search with partial name
+                    # Step 3: If no match, try with suggestions
+                    if self.fuzzy_matcher:
+                        suggestions = self.fuzzy_matcher.get_suggestions(extracted_name, max_results=5)
+                        for suggested_name, edit_dist in suggestions:
+                            if suggested_name != corrected_name:
+                                card_data = self.scryfall_api.search_card_by_name(suggested_name)
+                                if card_data:
+                                    return {
+                                        'success': True,
+                                        'card': card_data,
+                                        'confidence': max(0.60, 1.0 - edit_dist/len(extracted_name)),
+                                        'method': 'ocr_suggestion',
+                                        'extracted_name': extracted_name,
+                                        'corrected_name': suggested_name,
+                                        'message': f"Card recognized via suggestion: {card_data.get('name')}"
+                                    }
+                    
+                    # Step 4: Try partial name matching (legacy fallback)
                     words = extracted_name.split()
                     if len(words) >= 1:
                         for i in range(len(words), 0, -1):
@@ -569,7 +710,7 @@ class CardRecognitionEngine:
                                     return {
                                         'success': True,
                                         'card': card_data,
-                                        'confidence': 0.70,
+                                        'confidence': 0.65,
                                         'method': 'ocr_partial',
                                         'extracted_name': extracted_name,
                                         'message': f"Card recognized via partial OCR: {card_data.get('name')}"

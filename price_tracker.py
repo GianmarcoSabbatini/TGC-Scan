@@ -51,7 +51,8 @@ class PriceTracker:
                 db.add(price_record)
                 db.commit()
                 
-                logger.info(f"Price updated | card={card.name} | price=${price:.2f}")
+                # Use DEBUG level to avoid spamming console
+                logger.debug(f"Price updated | card={card.name} | price=${price:.2f}")
                 return price
             
             return None

@@ -10,6 +10,9 @@ imagehash==4.3.1
 scikit-learn>=1.0.0
 pytesseract>=0.3.10
 
+# Fuzzy matching for OCR error correction
+symspellpy>=6.7.0
+
 # Testing dependencies
 pytest==7.4.3
 pytest-cov==4.1.0

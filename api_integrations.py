@@ -49,7 +49,7 @@ class ScryfallAPI:
             )
             
             if response.status_code == 200:
-                logger.info(f"Scryfall: Card found | name={name}")
+                logger.debug(f"Scryfall: Card found | name={name}")
                 return self._parse_card_data(response.json())
             logger.debug(f"Scryfall: Card not found | name={name} | status={response.status_code}")
             return None
@@ -69,7 +69,7 @@ class ScryfallAPI:
             )
             
             if response.status_code == 200:
-                logger.info(f"Scryfall: Card retrieved | set={set_code} | number={collector_number}")
+                logger.debug(f"Scryfall: Card retrieved | set={set_code} | number={collector_number}")
                 return self._parse_card_data(response.json())
             return None
         except Exception as e:
