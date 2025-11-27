@@ -207,148 +207,10 @@ class TestScryfallAPI:
         assert 'U' in result['colors']
 
 
-class TestPokemonTCGAPI:
-    """Tests for Pokemon TCG API client"""
-    
-    def test_search_card_by_name_success(self):
-        """Test successful Pokemon card search"""
-        from api_integrations import PokemonTCGAPI
-        
-        api = PokemonTCGAPI()
-        
-        with patch('api_integrations.requests.get') as mock_get:
-            mock_response = MagicMock()
-            mock_response.status_code = 200
-            mock_response.json.return_value = {
-                'data': [{
-                    'id': 'swsh1-25',
-                    'name': 'Pikachu V',
-                    'set': {'id': 'swsh1', 'name': 'Sword & Shield'},
-                    'number': '25',
-                    'rarity': 'Rare Holo',
-                    'types': ['Lightning'],
-                    'images': {'large': 'https://example.com/pikachu.jpg'},
-                    'attacks': [{'text': 'Attack text'}],
-                    'artist': 'Artist',
-                    'cardmarket': {'prices': {'averageSellPrice': 5.00}}
-                }]
-            }
-            mock_get.return_value = mock_response
-            
-            result = api.search_card_by_name('Pikachu V')
-        
-        assert result is not None
-        assert result['tcg'] == 'pokemon'
-        assert result['name'] == 'Pikachu V'
-        
-    def test_search_card_by_name_not_found(self):
-        """Test Pokemon card search when not found"""
-        from api_integrations import PokemonTCGAPI
-        
-        api = PokemonTCGAPI()
-        
-        with patch('api_integrations.requests.get') as mock_get:
-            mock_response = MagicMock()
-            mock_response.status_code = 200
-            mock_response.json.return_value = {'data': []}
-            mock_get.return_value = mock_response
-            
-            result = api.search_card_by_name('NonexistentPokemon')
-        
-        assert result is None
-        
-    def test_search_card_api_error(self):
-        """Test Pokemon card search with API error"""
-        from api_integrations import PokemonTCGAPI
-        
-        api = PokemonTCGAPI()
-        
-        with patch('api_integrations.requests.get') as mock_get:
-            mock_get.side_effect = requests.RequestException("Network error")
-            
-            result = api.search_card_by_name('Pikachu')
-        
-        assert result is None
 
 
-class TestYuGiOhAPI:
-    """Tests for Yu-Gi-Oh API client"""
-    
-    def test_search_card_by_name_success(self):
-        """Test successful Yu-Gi-Oh card search"""
-        from api_integrations import YuGiOhAPI
-        
-        api = YuGiOhAPI()
-        
-        with patch('api_integrations.requests.get') as mock_get:
-            mock_response = MagicMock()
-            mock_response.status_code = 200
-            mock_response.json.return_value = {
-                'data': [{
-                    'id': 46986414,
-                    'name': 'Dark Magician',
-                    'type': 'Normal Monster',
-                    'attribute': 'DARK',
-                    'desc': 'The ultimate wizard',
-                    'card_sets': [{
-                        'set_code': 'LOB-EN005',
-                        'set_name': 'Legend of Blue Eyes',
-                        'set_rarity': 'Ultra Rare'
-                    }],
-                    'card_images': [{
-                        'id': 46986414,
-                        'image_url': 'https://example.com/dark_magician.jpg'
-                    }],
-                    'card_prices': [{
-                        'tcgplayer_price': '15.00'
-                    }]
-                }]
-            }
-            mock_get.return_value = mock_response
-            
-            result = api.search_card_by_name('Dark Magician')
-        
-        assert result is not None
-        assert result['tcg'] == 'yugioh'
-        assert result['name'] == 'Dark Magician'
-        
-    def test_search_card_by_name_not_found(self):
-        """Test Yu-Gi-Oh card search when not found"""
-        from api_integrations import YuGiOhAPI
-        
-        api = YuGiOhAPI()
-        
-        with patch('api_integrations.requests.get') as mock_get:
-            mock_response = MagicMock()
-            mock_response.status_code = 200
-            mock_response.json.return_value = {'data': []}
-            mock_get.return_value = mock_response
-            
-            result = api.search_card_by_name('NonexistentYuGiOhCard')
-        
-        assert result is None
-        
-    def test_parse_card_without_sets(self):
-        """Test parsing Yu-Gi-Oh card without set data"""
-        from api_integrations import YuGiOhAPI
-        
-        api = YuGiOhAPI()
-        
-        data = {
-            'id': 12345,
-            'name': 'Test Card',
-            'type': 'Effect Monster',
-            'attribute': 'LIGHT',
-            'desc': 'Card description',
-            'card_sets': None,
-            'card_images': [{'image_url': 'https://example.com/card.jpg'}],
-            'card_prices': [{'tcgplayer_price': '1.00'}]
-        }
-        
-        result = api._parse_card_data(data)
-        
-        assert result['name'] == 'Test Card'
-        assert result['set_code'] == ''
+
+
 
 
 class TestCardAPIManager:
@@ -363,44 +225,25 @@ class TestCardAPIManager:
         with patch.object(manager.scryfall, 'search_card_by_name') as mock_search:
             mock_search.return_value = {'name': 'Lightning Bolt', 'tcg': 'mtg'}
             
-            result = manager.search_card('Lightning Bolt', 'mtg')
+            result = manager.search_card('Lightning Bolt')
         
         mock_search.assert_called_once_with('Lightning Bolt')
         assert result['name'] == 'Lightning Bolt'
         
-    def test_search_card_pokemon(self):
-        """Test searching Pokemon card through manager"""
+
+        
+
+        
+    def test_search_card_not_found(self):
+        """Test searching card that doesn't exist"""
         from api_integrations import CardAPIManager
         
         manager = CardAPIManager()
         
-        with patch.object(manager.pokemon, 'search_card_by_name') as mock_search:
-            mock_search.return_value = {'name': 'Pikachu', 'tcg': 'pokemon'}
+        with patch.object(manager.scryfall, 'search_card_by_name') as mock_search:
+            mock_search.return_value = None
             
-            result = manager.search_card('Pikachu', 'pokemon')
-        
-        mock_search.assert_called_once_with('Pikachu')
-        assert result['name'] == 'Pikachu'
-        
-    def test_search_card_yugioh(self):
-        """Test searching Yu-Gi-Oh card through manager"""
-        from api_integrations import CardAPIManager
-        
-        manager = CardAPIManager()
-        
-        with patch.object(manager.yugioh, 'search_card_by_name') as mock_search:
-            mock_search.return_value = {'name': 'Blue-Eyes', 'tcg': 'yugioh'}
-            
-            result = manager.search_card('Blue-Eyes White Dragon', 'yugioh')
-        
-        mock_search.assert_called_once_with('Blue-Eyes White Dragon')
-        
-    def test_search_card_unknown_tcg(self):
-        """Test searching card with unknown TCG"""
-        from api_integrations import CardAPIManager
-        
-        manager = CardAPIManager()
-        result = manager.search_card('Some Card', 'unknown_tcg')
+            result = manager.search_card('NonexistentCard12345')
         
         assert result is None
         
@@ -454,34 +297,9 @@ class TestAPIErrorHandling:
         
         assert result is None
         
-    def test_pokemon_connection_error(self):
-        """Test Pokemon API connection error handling"""
-        from api_integrations import PokemonTCGAPI
+
         
-        api = PokemonTCGAPI()
-        
-        with patch('api_integrations.requests.get') as mock_get:
-            mock_get.side_effect = requests.ConnectionError("Connection failed")
-            
-            result = api.search_card_by_name('Pikachu')
-        
-        assert result is None
-        
-    def test_yugioh_invalid_json(self):
-        """Test Yu-Gi-Oh API invalid JSON response"""
-        from api_integrations import YuGiOhAPI
-        
-        api = YuGiOhAPI()
-        
-        with patch('api_integrations.requests.get') as mock_get:
-            mock_response = MagicMock()
-            mock_response.status_code = 200
-            mock_response.json.side_effect = ValueError("Invalid JSON")
-            mock_get.return_value = mock_response
-            
-            result = api.search_card_by_name('Dark Magician')
-        
-        assert result is None
+
 
 
 class TestDataParsing:
@@ -506,42 +324,6 @@ class TestDataParsing:
         assert result['name'] == 'Minimal Card'
         assert result['colors'] == ''
         
-    def test_pokemon_missing_cardmarket(self):
-        """Test Pokemon parsing without cardmarket data"""
-        from api_integrations import PokemonTCGAPI
+
         
-        api = PokemonTCGAPI()
-        
-        data = {
-            'id': 'test',
-            'name': 'Test Pokemon',
-            'set': {'id': 'swsh1', 'name': 'Sword & Shield'},
-            'number': '1',
-            'types': [],
-            'images': {},
-            'attacks': []
-        }
-        
-        result = api._parse_card_data(data)
-        
-        assert result['name'] == 'Test Pokemon'
-        assert result['price_usd'] is None
-        
-    def test_yugioh_empty_card_prices(self):
-        """Test Yu-Gi-Oh parsing with empty card prices"""
-        from api_integrations import YuGiOhAPI
-        
-        api = YuGiOhAPI()
-        
-        data = {
-            'id': 12345,
-            'name': 'Test Card',
-            'type': 'Monster',
-            'card_images': [{}],
-            'card_prices': []
-        }
-        
-        result = api._parse_card_data(data)
-        
-        assert result['name'] == 'Test Card'
-        assert result['price_usd'] is None
+

@@ -127,9 +127,32 @@ class ScryfallAPI:
                 logger.info(f"Scryfall: Set {set_code} has {count} cards")
                 return count
             return 0
+            return 0
         except Exception as e:
             logger.error(f"Scryfall API error: {e}", exc_info=True)
             return 0
+
+    def get_all_sets(self) -> List[Dict]:
+        """Get all Magic: The Gathering sets"""
+        logger.debug("Scryfall: Getting all sets")
+        self.rate_limiter.wait()
+        
+        try:
+            response = requests.get(
+                f"{self.base_url}/sets",
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                sets = data.get('data', [])
+                # Filter out digital-only sets if needed, but for now keep all
+                logger.info(f"Scryfall: Retrieved {len(sets)} sets")
+                return sets
+            return []
+        except Exception as e:
+            logger.error(f"Scryfall API error: {e}", exc_info=True)
+            return []
     
     def _parse_card_data(self, data: Dict) -> Dict:
         """Parse Scryfall card data to our format"""
@@ -186,3 +209,7 @@ class CardAPIManager:
             except (ValueError, TypeError):
                 pass
         return None
+
+    def get_all_sets(self) -> List[Dict]:
+        """Get all sets"""
+        return self.scryfall.get_all_sets()

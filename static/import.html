@@ -71,6 +71,45 @@
                 </div>
             </div>
 
+            <!-- Import All Cards -->
+            <div class="card mb-xl" style="border: 1px solid var(--primary);">
+                <div class="card-header">
+                    <h3 class="card-title">🌍 Import ALL Cards</h3>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted mb-md">
+                        Import every Magic: The Gathering card from all sets.
+                        This process will take a while (approx. 20-30 minutes) but will enable offline recognition for
+                        all cards.
+                    </p>
+                    <div class="flex gap-md">
+                        <button id="btnStartFull" class="btn btn-primary" onclick="startFullImport()">Start Full
+                            Import</button>
+                        <button id="btnStopFull" class="btn btn-danger" onclick="stopFullImport()"
+                            style="display: none;">Stop Import</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Full Import Progress -->
+            <div id="fullImportProgressCard" class="card" style="display: none;">
+                <div class="card-header">
+                    <h3 class="card-title">Full Import Progress</h3>
+                </div>
+                <div class="card-body">
+                    <div class="progress-bar mb-md">
+                        <div class="progress-fill" id="fullImportProgress" style="width: 0%;"></div>
+                    </div>
+                    <div class="flex justify-between text-muted mb-sm">
+                        <span id="fullImportSet">Initializing...</span>
+                        <span id="fullImportCount">0/0 sets</span>
+                    </div>
+                    <div id="fullImportStats" class="text-center text-muted" style="font-size: var(--font-size-sm);">
+                        Total cards imported: 0
+                    </div>
+                </div>
+            </div>
+
             <!-- Import Progress -->
             <div id="progressCard" class="card" style="display: none;">
                 <div class="card-header">
@@ -91,7 +130,8 @@
                     <h3 class="card-title">🖼️ Image Hash Download (Background)</h3>
                 </div>
                 <div class="card-body">
-                    <p class="text-muted mb-md">Downloading image hashes for card recognition. This runs in the background.</p>
+                    <p class="text-muted mb-md">Downloading image hashes for card recognition. This runs in the
+                        background.</p>
                     <div class="progress-bar mb-md">
                         <div class="progress-fill" id="hashProgress" style="width: 0%; background: var(--info);"></div>
                     </div>
@@ -209,7 +249,7 @@
 
             progressCard.style.display = 'none';
             resultsCard.style.display = 'block';
-            
+
             // Show hash download card if hash download started
             if (data.hash_download_started) {
                 document.getElementById('hashProgressCard').style.display = 'block';
@@ -237,7 +277,7 @@
                 </div>
             `;
         }
-        
+
         async function stopHashDownload() {
             try {
                 await fetch('/api/hash/stop', { method: 'POST' });
@@ -254,7 +294,7 @@
                 const progress = document.getElementById('importProgress');
                 const progressText = document.getElementById('progressText');
                 const currentCard = document.getElementById('currentCard');
-                
+
                 // Calculate percentage if total is available
                 const processed = data.imported + data.skipped;
                 if (data.total && data.total > 0) {
@@ -266,21 +306,21 @@
                 }
                 currentCard.textContent = `Current: ${data.current_card}`;
             });
-            
+
             // Hash download progress
             window.socket.on('hash_download_started', (data) => {
                 document.getElementById('hashProgressCard').style.display = 'block';
                 document.getElementById('hashProgressText').textContent = `Starting download for ${data.total} cards...`;
             });
-            
+
             window.socket.on('hash_download_progress', (data) => {
                 const progress = document.getElementById('hashProgress');
                 const progressText = document.getElementById('hashProgressText');
-                
+
                 progress.style.width = `${data.percent}%`;
                 progressText.textContent = `${data.processed}/${data.total} (${data.percent}%) - Current: ${data.current_card}`;
             });
-            
+
             window.socket.on('hash_download_complete', (data) => {
                 const progressText = document.getElementById('hashProgressText');
                 progressText.textContent = `✓ Complete! ${data.processed}/${data.total} hashes downloaded.`;
@@ -288,9 +328,34 @@
                 document.getElementById('hashProgress').style.background = 'var(--success)';
                 showNotification(`Hash download complete: ${data.processed} images processed`, 'success');
             });
-            
+
             window.socket.on('hash_download_error', (data) => {
                 showNotification(`Hash download error: ${data.error}`, 'error');
+            });
+
+            // Full Import Socket Listeners
+            window.socket.on('full_import_progress', (data) => {
+                updateFullImportUI(true);
+
+                const percent = data.total_sets > 0 ? (data.processed_sets / data.total_sets) * 100 : 0;
+                document.getElementById('fullImportProgress').style.width = `${percent}%`;
+                document.getElementById('fullImportSet').textContent = `Importing: ${data.current_set}`;
+                document.getElementById('fullImportCount').textContent = `${data.processed_sets}/${data.total_sets} sets`;
+                document.getElementById('fullImportStats').textContent = `Total cards imported: ${data.total_cards}`;
+            });
+
+            window.socket.on('full_import_complete', (data) => {
+                updateFullImportUI(false);
+                showNotification('Full import completed successfully!', 'success');
+                document.getElementById('fullImportSet').textContent = 'Completed!';
+                document.getElementById('fullImportProgress').style.width = '100%';
+                document.getElementById('fullImportProgress').style.backgroundColor = 'var(--success)';
+            });
+
+            window.socket.on('full_import_error', (data) => {
+                updateFullImportUI(false);
+                showNotification(`Import error: ${data.error}`, 'error');
+                document.getElementById('fullImportProgress').style.backgroundColor = 'var(--error)';
             });
         }
 
@@ -302,6 +367,62 @@
         document.getElementById('setCode').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') bulkImport();
         });
+
+        // Full Import Logic
+        async function startFullImport() {
+            if (!confirm('This will import ALL Magic cards. It may take 20-30 minutes. Continue?')) return;
+
+            try {
+                const response = await fetch('/api/cards/import-all', { method: 'POST' });
+                const data = await response.json();
+
+                if (response.ok) {
+                    showNotification('Full import started', 'success');
+                    updateFullImportUI(true);
+                } else {
+                    showNotification(data.error, 'error');
+                }
+            } catch (error) {
+                console.error(error);
+                showNotification('Error starting import', 'error');
+            }
+        }
+
+        async function stopFullImport() {
+            if (!confirm('Stop the import process?')) return;
+
+            try {
+                await fetch('/api/cards/import-all/stop', { method: 'POST' });
+                showNotification('Stopping import...', 'info');
+            } catch (error) {
+                console.error(error);
+            }
+        }
+
+        function updateFullImportUI(running) {
+            const btnStart = document.getElementById('btnStartFull');
+            const btnStop = document.getElementById('btnStopFull');
+            const progressCard = document.getElementById('fullImportProgressCard');
+
+            if (running) {
+                btnStart.style.display = 'none';
+                btnStop.style.display = 'inline-block';
+                progressCard.style.display = 'block';
+            } else {
+                btnStart.style.display = 'inline-block';
+                btnStop.style.display = 'none';
+            }
+        }
+
+        // Check status on load
+        fetch('/api/cards/import-all/status')
+            .then(res => res.json())
+            .then(data => {
+                if (data.running) {
+                    updateFullImportUI(true);
+                }
+            })
+            .catch(err => console.log('Status check failed', err));
     </script>
 </body>
 

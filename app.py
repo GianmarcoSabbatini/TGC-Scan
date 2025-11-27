@@ -217,9 +217,120 @@ class HashDownloadWorker:
         }
 
 
+class FullImportWorker:
+    """Background worker to import ALL cards from Scryfall"""
+    
+    def __init__(self):
+        self.running = False
+        self.thread = None
+        self.progress = {'total_sets': 0, 'processed_sets': 0, 'current_set': None, 'total_cards': 0}
+        self.stop_event = threading.Event()
+        logger.info("FullImportWorker initialized")
+        
+    def start(self):
+        """Start full import in background"""
+        if self.running:
+            return False
+            
+        self.running = True
+        self.stop_event.clear()
+        self.progress = {'total_sets': 0, 'processed_sets': 0, 'current_set': None, 'total_cards': 0}
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+        return True
+        
+    def stop(self):
+        """Stop the background thread"""
+        self.running = False
+        self.stop_event.set()
+        if self.thread:
+            self.thread.join(timeout=5)
+            
+    def _run(self):
+        """Main import loop"""
+        db = None
+        try:
+            logger.info("Starting full import...")
+            sets = api_manager.get_all_sets()
+            self.progress['total_sets'] = len(sets)
+            
+            db = get_db()
+            
+            for idx, set_data in enumerate(sets):
+                if self.stop_event.is_set():
+                    break
+                    
+                set_code = set_data.get('code')
+                set_name = set_data.get('name')
+                self.progress['current_set'] = f"{set_name} ({set_code.upper()})"
+                self.progress['processed_sets'] = idx + 1
+                
+                # Emit progress
+                socketio.emit('full_import_progress', self.progress)
+                
+                # Import set logic
+                try:
+                    # Skip if set is empty or digital only? No, keep all.
+                    # Use existing bulk import logic but simplified
+                    cards_data = api_manager.scryfall.search_cards(f'set:{set_code}')
+                    
+                    batch_count = 0
+                    for card_data in cards_data:
+                        if self.stop_event.is_set():
+                            break
+                            
+                        # Check if exists
+                        # Optimization: Check existence in memory if possible, or just try/except integrity error
+                        # But checking one by one is slow. 
+                        # Better: Get all card_ids for this set from DB first
+                        
+                        existing = db.query(Card.card_id).filter(Card.card_id == card_data['id']).first()
+                        if existing:
+                            continue
+                            
+                        # Clean data
+                        card_data.pop('price_usd', None)
+                        card_data.pop('price_usd_foil', None)
+                        card_data.pop('price_eur', None)
+                        card_data.pop('price_eur_foil', None)
+                        card_data.pop('scryfall_id', None)
+                        card_data.pop('id', None)
+                        
+                        card = Card(**card_data)
+                        db.add(card)
+                        self.progress['total_cards'] += 1
+                        batch_count += 1
+                        
+                    db.commit()
+                    logger.info(f"Imported set {set_code} | new_cards={batch_count}")
+                    
+                except Exception as e:
+                    logger.error(f"Error importing set {set_code}: {e}")
+                    db.rollback()
+                    continue
+                    
+            logger.info("Full import complete")
+            socketio.emit('full_import_complete', self.progress)
+            
+        except Exception as e:
+            logger.error(f"Full import failed: {e}", exc_info=True)
+            socketio.emit('full_import_error', {'error': str(e)})
+        finally:
+            if db:
+                db.close()
+            self.running = False
+            
+    def get_status(self):
+        return {
+            'running': self.running,
+            'progress': self.progress
+        }
+
+
 # Initialize workers
 price_scheduler = PriceUpdateScheduler(interval_hours=6)
 hash_worker = HashDownloadWorker()
+full_import_worker = FullImportWorker()
 
 def allowed_file(filename):
     """Check if file extension is allowed"""
@@ -468,7 +579,7 @@ def search_cards_external():
     
     try:
         # Search using the API manager
-        card_data = api_manager.search_card(query, tcg)
+        card_data = api_manager.search_card(query)
         
         if card_data:
             logger.info(f"External search found: {card_data.get('name')}")
@@ -499,7 +610,7 @@ def import_card_from_api():
     try:
         # Search API
         with PerformanceLogger(f"api_search_{tcg}"):
-            card_data = api_manager.search_card(name, tcg)
+            card_data = api_manager.search_card(name)
         
         if not card_data:
             logger.info(f"Card import: Card not found in API | name={name}")
@@ -540,6 +651,9 @@ def import_card_from_api():
             price_usd_foil = card_data.pop('price_usd_foil', None)
             price_eur = card_data.pop('price_eur', None)
             price_eur_foil = card_data.pop('price_eur_foil', None)
+            # Remove duplicate/invalid ID fields (card_id is the correct one)
+            card_data.pop('scryfall_id', None)
+            card_data.pop('id', None)
             
             card = Card(**card_data)
             db.add(card)
@@ -670,6 +784,9 @@ def bulk_import_cards():
                 card_data.pop('price_usd_foil', None)
                 card_data.pop('price_eur', None)
                 card_data.pop('price_eur_foil', None)
+                # Remove duplicate/invalid ID fields (card_id is the correct one)
+                card_data.pop('scryfall_id', None)
+                card_data.pop('id', None)
                 
                 card = Card(**card_data)
                 db.add(card)
@@ -711,6 +828,26 @@ def bulk_import_cards():
     except Exception as e:
         logger.error(f"Bulk import error: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/cards/import-all', methods=['POST'])
+def start_full_import():
+    """Start importing all cards from Scryfall"""
+    if full_import_worker.running:
+        return jsonify({'error': 'Full import already running'}), 400
+        
+    full_import_worker.start()
+    return jsonify({'message': 'Full import started', 'status': full_import_worker.get_status()})
+
+@app.route('/api/cards/import-all/stop', methods=['POST'])
+def stop_full_import():
+    """Stop full import"""
+    full_import_worker.stop()
+    return jsonify({'message': 'Full import stopping...'})
+
+@app.route('/api/cards/import-all/status', methods=['GET'])
+def get_full_import_status():
+    """Get full import status"""
+    return jsonify(full_import_worker.get_status())
 
 # ============================================================================
 # COLLECTION MANAGEMENT ENDPOINTS
