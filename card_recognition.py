@@ -111,35 +111,52 @@ class CardRecognitionEngine:
         # Apply Gaussian blur to reduce noise
         blurred = cv2.GaussianBlur(gray, (5, 5), 0)
         
-        # Edge detection with adjusted thresholds for mobile photos
-        edges = cv2.Canny(blurred, 30, 100)
-        
-        # Dilate edges to connect nearby edges
-        kernel = np.ones((3, 3), np.uint8)
-        edges = cv2.dilate(edges, kernel, iterations=2)
-        
-        # Find contours
-        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
-        # Find the largest rectangular contour (the card)
+        # Try multiple edge detection strategies
         card_contour = None
         max_area = 0
         img_area = img.shape[0] * img.shape[1]
         
-        logger.debug(f"Found {len(contours)} contours")
+        # Strategy 1: Standard Canny edge detection
+        edges = cv2.Canny(blurred, 30, 100)
+        kernel = np.ones((3, 3), np.uint8)
+        edges = cv2.dilate(edges, kernel, iterations=2)
+        
+        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        logger.debug(f"Found {len(contours)} contours with standard edge detection")
         
         for contour in contours:
             area = cv2.contourArea(contour)
-            # Card should be at least 10% of image and at most 95%
-            if area > img_area * 0.1 and area < img_area * 0.95:
-                # Approximate the contour to a polygon
+            # Card should be at least 5% of image and at most 95%
+            if area > img_area * 0.05 and area < img_area * 0.95:
                 peri = cv2.arcLength(contour, True)
                 approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
                 
-                # If it's roughly rectangular (4 corners) or close to it
-                if len(approx) >= 4 and len(approx) <= 6 and area > max_area:
-                    max_area = area
-                    card_contour = approx
+                # Accept polygons with 4-8 vertices (cards may have rounded corners)
+                if len(approx) >= 4 and len(approx) <= 8 and area > max_area:
+                    # Check aspect ratio is card-like (between 0.5 and 0.9)
+                    x, y, w, h = cv2.boundingRect(approx)
+                    aspect = w / h if h > 0 else 0
+                    if 0.5 < aspect < 0.9 or 0.5 < (1/aspect) < 0.9:
+                        max_area = area
+                        card_contour = approx
+        
+        # Strategy 2: If no card found, try adaptive threshold
+        if card_contour is None:
+            adaptive = cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
+            contours2, _ = cv2.findContours(adaptive, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            logger.debug(f"Trying adaptive threshold: {len(contours2)} contours")
+            
+            for contour in contours2:
+                area = cv2.contourArea(contour)
+                if area > img_area * 0.05 and area < img_area * 0.95:
+                    peri = cv2.arcLength(contour, True)
+                    approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
+                    if len(approx) >= 4 and len(approx) <= 8 and area > max_area:
+                        x, y, w, h = cv2.boundingRect(approx)
+                        aspect = w / h if h > 0 else 0
+                        if 0.5 < aspect < 0.9 or 0.5 < (1/aspect) < 0.9:
+                            max_area = area
+                            card_contour = approx
         
         # Crop to card if found, otherwise try center crop
         if card_contour is not None:
@@ -148,12 +165,35 @@ class CardRecognitionEngine:
             cropped = img[y:y+h, x:x+w]
             logger.info(f"Card detected: x={x}, y={y}, w={w}, h={h}")
         else:
-            # No card detected - assume card is centered, crop to middle 70%
+            # No card detected - use smarter center crop
+            # The card should be roughly in the center of the camera frame
+            # MTG card aspect ratio is ~0.716 (63:88)
             h, w = img.shape[:2]
-            margin_x = int(w * 0.15)
-            margin_y = int(h * 0.15)
-            cropped = img[margin_y:h-margin_y, margin_x:w-margin_x]
-            logger.warning(f"No card contour detected, using center crop")
+            
+            # For portrait images (phone held vertically), the card is vertical
+            # For landscape images, the card might be horizontal
+            if h > w:  # Portrait orientation
+                # Card should occupy roughly 60-70% of the frame width
+                # and be vertically centered
+                card_width = int(w * 0.65)
+                card_height = int(card_width / 0.716)  # MTG aspect ratio
+                
+                # Center the crop
+                margin_x = (w - card_width) // 2
+                margin_y = (h - card_height) // 2
+                
+                # Make sure we don't go out of bounds
+                margin_y = max(0, margin_y)
+                end_y = min(h, margin_y + card_height)
+                
+                cropped = img[margin_y:end_y, margin_x:margin_x+card_width]
+                logger.warning(f"No card contour detected, using smart center crop (portrait) | margins=({margin_x}, {margin_y})")
+            else:  # Landscape orientation
+                # Less common, but handle it
+                margin_x = int(w * 0.15)
+                margin_y = int(h * 0.10)
+                cropped = img[margin_y:h-margin_y, margin_x:w-margin_x]
+                logger.warning(f"No card contour detected, using center crop (landscape)")
         
         # Enhance contrast
         lab = cv2.cvtColor(cropped, cv2.COLOR_BGR2LAB)
@@ -162,6 +202,13 @@ class CardRecognitionEngine:
         l = clahe.apply(l)
         enhanced = cv2.merge([l, a, b])
         enhanced = cv2.cvtColor(enhanced, cv2.COLOR_LAB2BGR)
+        
+        # Auto-rotate if the cropped card is in landscape orientation
+        # MTG cards should be portrait (taller than wide)
+        ch, cw = enhanced.shape[:2]
+        if cw > ch:  # Landscape - card is rotated
+            logger.info(f"Cropped card is landscape ({cw}x{ch}), rotating to portrait")
+            enhanced = cv2.rotate(enhanced, cv2.ROTATE_90_COUNTERCLOCKWISE)
         
         logger.debug(f"Cropped image size: {enhanced.shape}")
         
@@ -182,23 +229,26 @@ class CardRecognitionEngine:
         logger.debug(f"Extracting name region | size={w}x{h} | aspect_ratio={aspect_ratio:.3f}")
         
         # Check if image is in portrait orientation (card-like)
+        # If image is landscape (wider than tall), rotate it to portrait
+        if aspect_ratio > 1.1:
+            logger.debug(f"Landscape image detected (aspect={aspect_ratio:.3f}), rotating 90 degrees")
+            image = cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE)
+            h, w = image.shape[:2]
+            aspect_ratio = w / h
+            logger.debug(f"After rotation: {w}x{h}, aspect={aspect_ratio:.3f}")
+        
         if aspect_ratio < 0.9:  # Portrait - card is vertical
-            # MTG card name is in the top area, about 4-12% from top
-            top_margin = int(h * 0.04)
-            bottom_cut = int(h * 0.13)
-            left_margin = int(w * 0.06)
-            right_cut = int(w * 0.85)
-        elif aspect_ratio > 1.1:  # Landscape - card might be horizontal
-            # Card is rotated 90 degrees
-            top_margin = int(h * 0.06)
-            bottom_cut = int(h * 0.85)
-            left_margin = int(w * 0.04)
-            right_cut = int(w * 0.13)
-        else:  # Square-ish - try standard portrait extraction
-            top_margin = int(h * 0.04)
-            bottom_cut = int(h * 0.15)
+            # MTG card name is in the top area, about 3-10% from top
+            # Based on testing: 3-10% vertical, 5-70% horizontal works best
+            top_margin = int(h * 0.03)
+            bottom_cut = int(h * 0.10)
             left_margin = int(w * 0.05)
-            right_cut = int(w * 0.80)
+            right_cut = int(w * 0.70)
+        else:  # Square-ish or still landscape after rotation - try standard extraction
+            top_margin = int(h * 0.03)
+            bottom_cut = int(h * 0.10)
+            left_margin = int(w * 0.05)
+            right_cut = int(w * 0.70)
         
         name_region = image[top_margin:bottom_cut, left_margin:right_cut]
         
@@ -231,12 +281,12 @@ class CardRecognitionEngine:
         Extract set code and collector number from the bottom-left corner of the card.
         
         The set info on MTG cards appears in a very specific location:
-        - Bottom 5-8% of the card height
-        - Left 50% of the card width
-        - Format: "U 0167" on line 1, "FIN · EN" on line 2
+        - Bottom-left corner: last 5-7% of card height, first 30-35% of width
+        - Format: collector number (e.g., "168") on first line
+                  set code + language (e.g., "WOE · EN") on second line
         
         We scan a small region and look for patterns like:
-        - 3-4 digit numbers (collector number)
+        - 2-4 digit numbers (collector number)
         - Known 3-letter set codes near the number
         """
         if not TESSERACT_AVAILABLE:
@@ -258,19 +308,32 @@ class CardRecognitionEngine:
             'DSK', 'BLB', 'OTJ', 'MKC', 'CLU', 'PIP', 'ACR', 'WHO', 'LTR', 'CMM',
             'WOT', '2X2', 'CLB', 'NCC', 'SLD', 'J22', 'UNF', 'DMC', 'MUL', 'BRC',
             'BOT', 'BRR', 'ONC', 'MOM', 'MAT', 'MUL', 'LCC', 'RVR', 'SPG', 'PIO',
-            'FDN', 'DSC', 'MH3', 'MH2', 'MH1', '40K', 'REX', '30A'
+            'FDN', 'DSC', 'MH3', 'MH2', 'MH1', '40K', 'REX', '30A',
+            # Spider-Man and Marvel sets
+            'SPM', 'PSPM', 'TSPM', 'OM1'
         }
         
         best_result = {'set_code': None, 'collector_number': None}
         
-        # Strategy 1: Scan very bottom strip (last 8% of image, left 60%)
-        # This is where the set info line appears
-        bottom_strip = image[int(h * 0.92):, :int(w * 0.6)]
-        logger.debug(f"Set info: scanning bottom strip | size={bottom_strip.shape[1]}x{bottom_strip.shape[0]}")
+        # CORRECTED COORDINATES for MTG card set info
+        # The set info is in the BOTTOM-LEFT corner:
+        # - Vertical: last 5-7% of the card (93-100% of height)
+        # - Horizontal: first 30-35% of the card (2-35% of width)
+        
+        # Primary region: focused on set info area
+        set_top = int(h * 0.93)
+        set_bottom = h
+        set_left = int(w * 0.02)
+        set_right = int(w * 0.35)
+        
+        bottom_strip = image[set_top:set_bottom, set_left:set_right]
+        logger.debug(f"Set info: scanning bottom-left corner | y={set_top}-{set_bottom}, x={set_left}-{set_right} | size={bottom_strip.shape[1]}x{bottom_strip.shape[0]}")
         cv2.imwrite(os.path.join(debug_dir, 'set_info_strip.png'), bottom_strip)
         
-        # Strategy 2: Also scan a slightly larger region (last 12%)
-        bottom_region = image[int(h * 0.88):, :int(w * 0.6)]
+        # Secondary region: slightly larger area for fallback
+        region_top = int(h * 0.90)
+        region_right = int(w * 0.40)
+        bottom_region = image[region_top:set_bottom, set_left:region_right]
         cv2.imwrite(os.path.join(debug_dir, 'set_info_region.png'), bottom_region)
         
         # Try both regions
@@ -320,9 +383,9 @@ class CardRecognitionEngine:
                         
                         logger.debug(f"Set OCR ({region_name}, {img_name}, PSM {psm}): '{text}'")
                         
-                        # Pattern 1: Look for "NUMBER SET" format like "0167 FIN" or "167 FIN"
-                        # The number and set code should be close together
-                        combined_pattern = r'0?(\d{1,4})\s*[/·\-]?\s*([A-Z]{3})'
+                        # Pattern 1: Look for "NUMBER SET" format like "168 WOE" or "0168 WOE"
+                        # Require at least 2 digits to avoid false positives
+                        combined_pattern = r'0?(\d{2,4})\s*[/·\-]?\s*([A-Z]{3})'
                         match = re.search(combined_pattern, text)
                         if match:
                             num = match.group(1).lstrip('0') or '0'
@@ -333,7 +396,7 @@ class CardRecognitionEngine:
                                 logger.info(f"Found combined pattern: {num} {potential_set}")
                                 return best_result
                         
-                        # Pattern 2: "SET" format like "FIN · EN" or just "FIN"
+                        # Pattern 2: Look for set code like "WOE · EN" or "WOE - EN" or just "WOE"
                         for set_code in known_sets:
                             # Look for set code with word boundary or separator
                             set_pattern = rf'\b{set_code}\b|{set_code}\s*[·\-]'
@@ -343,11 +406,11 @@ class CardRecognitionEngine:
                                     logger.info(f"Found set code: {set_code}")
                         
                         # Pattern 3: Look for collector number patterns
-                        # "U 0167", "C 234", "R 089", or just "0167", "234"
+                        # Require at least 2 digits to avoid false positives from single digits
                         num_patterns = [
-                            r'[UCRMLS]\s*0?(\d{1,4})\b',     # U 167, C 234, R 089
-                            r'\b0?(\d{3})\b',                # 167, 0167 (exactly 3-4 digits)
-                            r'(\d{1,4})\s*/\s*\d+',          # 167/264 format
+                            r'[UCRMLS]\s*0?(\d{2,4})\b',     # U 167, C 234, R 089 (rarity + number)
+                            r'\b0?(\d{2,4})\b',              # 167, 0167, 68 (2-4 digits)
+                            r'(\d{2,4})\s*/\s*\d+',          # 167/264 format
                         ]
                         
                         for pattern in num_patterns:
@@ -369,6 +432,129 @@ class CardRecognitionEngine:
                         continue
         
         logger.info(f"Set info extraction result: set={best_result.get('set_code')}, number={best_result.get('collector_number')}")
+        return best_result
+    
+    def extract_set_info_from_original(self, original_image: np.ndarray) -> Dict[str, str]:
+        """
+        Extract set code and collector number from the ORIGINAL photo.
+        
+        This is a fallback when the cropped card doesn't include the set info border.
+        The set info is typically found at 70-76% of the image height for portrait photos
+        where the card occupies the center of the frame.
+        
+        Returns dict with 'set_code' and 'collector_number'.
+        """
+        if not TESSERACT_AVAILABLE:
+            logger.warning("Tesseract not available for set info extraction from original")
+            return {'set_code': None, 'collector_number': None}
+        
+        h, w = original_image.shape[:2]
+        logger.debug(f"Extracting set info from original image: {w}x{h}")
+        
+        # Save debug image
+        debug_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads', 'debug')
+        os.makedirs(debug_dir, exist_ok=True)
+        
+        # Known MTG set codes
+        known_sets = {
+            'FIN', 'MKM', 'WOE', 'LCI', 'MOM', 'ONE', 'BRO', 'DMU', 'SNC', 'NEO',
+            'VOW', 'MID', 'AFR', 'STX', 'KHM', 'ZNR', 'IKO', 'THB', 'ELD', 'WAR',
+            'RNA', 'GRN', 'DOM', 'RIX', 'XLN', 'HOU', 'AKH', 'AER', 'KLD', 'EMN',
+            'SOI', 'OGW', 'BFZ', 'DTK', 'FRF', 'KTK', 'M21', 'M20', 'M19', 'M15',
+            'DSK', 'BLB', 'OTJ', 'MKC', 'CLU', 'PIP', 'ACR', 'WHO', 'LTR', 'CMM',
+            'WOT', '2X2', 'CLB', 'NCC', 'SLD', 'J22', 'UNF', 'DMC', 'MUL', 'BRC',
+            'BOT', 'BRR', 'ONC', 'MOM', 'MAT', 'MUL', 'LCC', 'RVR', 'SPG', 'PIO',
+            'FDN', 'DSC', 'MH3', 'MH2', 'MH1', '40K', 'REX', '30A',
+            # Spider-Man and Marvel sets
+            'SPM', 'PSPM', 'TSPM', 'OM1'
+        }
+        
+        best_result = {'set_code': None, 'collector_number': None}
+        
+        # For portrait photos (phone camera), the card is centered
+        # Set info appears at roughly 70-76% of image height, 15-45% width
+        # We scan multiple vertical strips to find it
+        
+        y_ranges = [
+            (0.70, 0.76),  # Primary - where we found BLB in the test
+            (0.68, 0.74),  # Slightly higher
+            (0.72, 0.78),  # Slightly lower
+            (0.65, 0.72),  # Even higher (for closer shots)
+            (0.75, 0.82),  # Even lower (for further shots)
+        ]
+        
+        x_start = int(w * 0.12)  # Left side where set info appears
+        x_end = int(w * 0.50)    # Don't go too far right
+        
+        for y_start_pct, y_end_pct in y_ranges:
+            y1 = int(h * y_start_pct)
+            y2 = int(h * y_end_pct)
+            
+            region = original_image[y1:y2, x_start:x_end]
+            
+            if region.shape[0] < 20 or region.shape[1] < 50:
+                continue
+            
+            # Convert and preprocess
+            gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
+            inverted = cv2.bitwise_not(gray)
+            
+            # Scale up for better OCR
+            scaled = cv2.resize(inverted, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+            
+            # Try OCR
+            for psm in [6, 7]:
+                try:
+                    text = pytesseract.image_to_string(scaled, config=f'--oem 3 --psm {psm}')
+                    text = text.strip().upper()
+                    
+                    if not text or len(text) < 3:
+                        continue
+                    
+                    logger.debug(f"Original set OCR (y={y_start_pct:.0%}-{y_end_pct:.0%}, PSM {psm}): '{text[:60]}'")
+                    
+                    # Look for collector number pattern: R 0053, U 0167, etc.
+                    # Only set if we haven't found one yet!
+                    if not best_result['collector_number']:
+                        num_match = re.search(r'[RCUMLS]\s*0?(\d{2,4})\b', text)
+                        if num_match:
+                            num = num_match.group(1).lstrip('0') or '0'
+                            if 1 <= int(num) <= 999:
+                                best_result['collector_number'] = num
+                                logger.info(f"Found collector number from original: {num}")
+                        
+                        # Also try plain number pattern
+                        if not best_result['collector_number']:
+                            num_match = re.search(r'\b0?(\d{2,4})\b', text)
+                            if num_match:
+                                num = num_match.group(1).lstrip('0') or '0'
+                                if 1 <= int(num) <= 999:
+                                    best_result['collector_number'] = num
+                                    logger.info(f"Found collector number from original (plain): {num}")
+                                logger.info(f"Found collector number from original (plain): {num}")
+                    
+                    # Look for set code - only if we haven't found one yet
+                    if not best_result['set_code']:
+                        for set_code in known_sets:
+                            if set_code in text:
+                                best_result['set_code'] = set_code.lower()
+                                logger.info(f"Found set code from original: {set_code}")
+                                break
+                    
+                    # If we found both, save debug and return
+                    if best_result['set_code'] and best_result['collector_number']:
+                        cv2.imwrite(os.path.join(debug_dir, 'set_info_from_original.png'), region)
+                        logger.info(f"Set info from original: set={best_result['set_code']}, number={best_result['collector_number']}")
+                        return best_result
+                        
+                except Exception as e:
+                    logger.debug(f"OCR failed for original region: {e}")
+                    continue
+        
+        # Save debug if we found partial info
+        if best_result['set_code'] or best_result['collector_number']:
+            logger.info(f"Partial set info from original: set={best_result.get('set_code')}, number={best_result.get('collector_number')}")
+        
         return best_result
     
     def extract_set_info_ocr(self, image_normal: np.ndarray, image_inverted: np.ndarray) -> Dict[str, str]:
@@ -469,10 +655,11 @@ class CardRecognitionEngine:
             pil_img = Image.fromarray(image)
             
             # Use simpler config - let Tesseract do its thing
-            # PSM 7 = single line, PSM 6 = block
+            # PSM 6 = block (works better for card names based on testing)
+            # PSM 7 = single line
             configs = [
+                r'--oem 3 --psm 6 -l eng',   # Block of text, English (best for card names)
                 r'--oem 3 --psm 7 -l eng',   # Single line, English
-                r'--oem 3 --psm 6 -l eng',   # Block of text, English
             ]
             
             best_text = ""
@@ -834,8 +1021,23 @@ class CardRecognitionEngine:
                     # NEW APPROACH: Scan bottom portion of image for known patterns
                     logger.info("=== STEP 1: Trying SET CODE + COLLECTOR NUMBER extraction ===")
                     try:
+                        # First try from processed/cropped card image
                         set_info = self.extract_set_info_from_full_image(processed_img)
-                        logger.info(f"Set info result: set_code={set_info.get('set_code')}, collector_number={set_info.get('collector_number')}")
+                        logger.info(f"Set info from processed: set_code={set_info.get('set_code')}, collector_number={set_info.get('collector_number')}")
+                        
+                        # If not found in processed image, try the ORIGINAL photo
+                        # (the crop might have cut off the set info border)
+                        if not (set_info.get('set_code') and set_info.get('collector_number')):
+                            logger.info("Set info incomplete in processed image, trying original photo...")
+                            set_info_original = self.extract_set_info_from_original(original_img)
+                            
+                            # Merge results - prefer original if it has more info
+                            if set_info_original.get('set_code') and not set_info.get('set_code'):
+                                set_info['set_code'] = set_info_original['set_code']
+                            if set_info_original.get('collector_number') and not set_info.get('collector_number'):
+                                set_info['collector_number'] = set_info_original['collector_number']
+                            
+                            logger.info(f"Set info after original scan: set_code={set_info.get('set_code')}, collector_number={set_info.get('collector_number')}")
                         
                         # If we have both set code and collector number, search directly!
                         if set_info.get('set_code') and set_info.get('collector_number'):
