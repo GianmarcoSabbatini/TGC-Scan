@@ -296,23 +296,114 @@
 
         .camera-top-bar {
             position: absolute;
-            top: 0;
+            top: 20px;
             left: 0;
             right: 0;
-            padding: 16px;
-            background: linear-gradient(to bottom, rgba(0, 0, 0, 0.6), transparent);
             display: flex;
-            justify-content: space-between;
+            flex-direction: column;
             align-items: center;
-            pointer-events: auto;
+            gap: 12px;
+            pointer-events: none;
+            z-index: 10;
         }
 
         .camera-status {
             display: flex;
             align-items: center;
             gap: 8px;
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 12px;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 4px 12px;
+            border-radius: 20px;
+            backdrop-filter: blur(4px);
+        }
+        
+        .auto-scan-indicator {
+            background: rgba(0, 0, 0, 0.6);
+            color: rgba(255, 255, 255, 0.6);
+            padding: 10px 24px;
+            border-radius: 30px;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(8px);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+        }
+        
+        .auto-scan-indicator.active {
+            background: rgba(0, 208, 132, 0.2);
+            color: #00D084;
+            border-color: #00D084;
+        }
+
+        .auto-scan-indicator.status-waiting {
+            background: rgba(74, 158, 255, 0.2);
+            color: #4A9EFF;
+            border-color: #4A9EFF;
+        }
+
+        .auto-scan-indicator.status-stabilizing {
+            background: rgba(255, 176, 32, 0.2);
+            color: #FFB020;
+            border-color: #FFB020;
+        }
+
+        .auto-scan-indicator.status-scanning {
+            background: rgba(0, 208, 132, 0.8);
             color: white;
-            font-size: 13px;
+            border-color: #00D084;
+            transform: scale(1.05);
+            box-shadow: 0 0 30px rgba(0, 208, 132, 0.4);
+        }
+
+        .auto-scan-indicator.status-cooldown {
+            background: rgba(155, 89, 182, 0.2);
+            color: #9B59B6;
+            border-color: #9B59B6;
+        }
+        
+        .card-frame {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 65%;
+            aspect-ratio: 63/88;
+            border: 2px dashed rgba(255, 255, 255, 0.4);
+            border-radius: 16px;
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6);
+            transition: all 0.3s ease;
+        }
+
+        .card-frame.active-waiting {
+            border-color: rgba(74, 158, 255, 0.5);
+            border-style: solid;
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6), inset 0 0 20px rgba(74, 158, 255, 0.1);
+        }
+
+        .card-frame.active-stabilizing {
+            border-color: #FFB020;
+            border-style: solid;
+            border-width: 3px;
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6), inset 0 0 30px rgba(255, 176, 32, 0.2);
+        }
+
+        .card-frame.active-scanning {
+            border-color: #00D084;
+            border-style: solid;
+            border-width: 4px;
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6), 0 0 40px rgba(0, 208, 132, 0.4);
+        }
+
+        .card-frame.active-cooldown {
+            border-color: #9B59B6;
+            border-style: solid;
+            opacity: 0.7;
         }
 
         .status-dot {
@@ -390,6 +481,26 @@
         .cam-btn.capture:disabled {
             opacity: 0.5;
             cursor: not-allowed;
+        }
+        
+        .cam-btn.auto-scan {
+            background: rgba(255, 255, 255, 0.15);
+            font-size: 24px;
+        }
+        
+        .cam-btn.auto-scan.active {
+            background: var(--primary);
+            border-color: var(--primary);
+            animation: pulse-btn 1.5s infinite;
+        }
+        
+        @keyframes pulse-btn {
+            0%, 100% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.05);
+            }
         }
 
         .camera-permission {
@@ -494,17 +605,40 @@
 
         .recent-scans {
             margin-top: 24px;
+            padding-bottom: 80px; /* Space for mobile nav */
         }
-
+        
         .scan-result {
             display: flex;
             gap: 16px;
-            padding: 16px;
+            padding: 12px;
             background: var(--surface);
             border-radius: var(--radius-lg);
             margin-bottom: 12px;
-            animation: slideIn 0.3s ease;
+            animation: slideIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
             border: 1px solid var(--border);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        /* Highlight the newest scan */
+        .scan-result:first-child {
+            border-color: var(--primary);
+            background: linear-gradient(to right, rgba(0, 208, 132, 0.1), var(--surface));
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+        
+        .scan-result:first-child::before {
+            content: "NEW";
+            position: absolute;
+            top: 0;
+            right: 0;
+            background: var(--primary);
+            color: white;
+            font-size: 9px;
+            font-weight: 700;
+            padding: 2px 6px;
+            border-bottom-left-radius: 6px;
         }
 
         @keyframes slideIn {
@@ -825,11 +959,13 @@
                                 <span class="status-dot" id="statusDot"></span>
                                 <span id="statusText">Camera off</span>
                             </div>
+                            <div class="auto-scan-indicator" id="autoScanStatus">Auto-Scan OFF</div>
                         </div>
                         <div class="camera-bottom-bar">
-                            <button class="cam-btn" onclick="switchCamera()" title="Switch Camera"></button>
-                            <button class="cam-btn capture" id="captureBtn" onclick="capturePhoto()" disabled></button>
-                            <button class="cam-btn" onclick="toggleFlash()" id="flashBtn" title="Flash"></button>
+                            <button class="cam-btn" onclick="switchCamera()" title="Switch Camera">🔄</button>
+                            <button class="cam-btn auto-scan" id="autoScanBtn" onclick="toggleAutoScan()" title="Start Auto-Scan">▶️</button>
+                            <button class="cam-btn capture" id="captureBtn" onclick="capturePhoto()" disabled>📷</button>
+                            <button class="cam-btn" onclick="toggleFlash()" id="flashBtn" title="Flash">⚡</button>
                         </div>
                         <div class="scanning-overlay" id="scanningOverlay">
                             <div class="scanning-spinner"></div>
@@ -885,6 +1021,327 @@
         let scanResults = [];
         let scanCount = 0;
         let searchTimeout = null;
+        
+        // === AUTO-SCAN CONTINUOUS MODE ===
+        let autoScanEnabled = false;
+        let autoScanInterval = null;
+        let lastScanTime = 0;
+        let previousFrameData = null;
+        let stableFrameCount = 0;
+        let scanCooldown = 2000; // ms between scans
+        let stabilityThreshold = 5; // frames of stability before scan
+        let cardDetectionCanvas = null;
+        let cardDetectionCtx = null;
+        
+        // Audio feedback
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        
+        function playBeep(type = 'success') {
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            if (type === 'success') {
+                // Pleasant success beep - two ascending tones
+                oscillator.frequency.setValueAtTime(880, audioContext.currentTime); // A5
+                oscillator.frequency.setValueAtTime(1108, audioContext.currentTime + 0.1); // C#6
+                gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+                gainNode.gain.exponentialDecayTo(0.01, audioContext.currentTime + 0.3);
+            } else if (type === 'error') {
+                // Error beep - lower descending tone
+                oscillator.frequency.setValueAtTime(330, audioContext.currentTime);
+                oscillator.frequency.setValueAtTime(220, audioContext.currentTime + 0.15);
+                gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+                gainNode.gain.exponentialDecayTo(0.01, audioContext.currentTime + 0.3);
+            } else if (type === 'detecting') {
+                // Soft tick when card detected
+                oscillator.frequency.setValueAtTime(600, audioContext.currentTime);
+                gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+                gainNode.gain.exponentialDecayTo(0.01, audioContext.currentTime + 0.05);
+            }
+            
+            oscillator.type = 'sine';
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.3);
+        }
+        
+        // Polyfill for exponentialDecayTo
+        if (!GainNode.prototype.exponentialDecayTo) {
+            GainNode.prototype.exponentialDecayTo = function(value, endTime) {
+                this.gain.exponentialRampToValueAtTime(Math.max(value, 0.0001), endTime);
+            };
+        }
+        
+        function initCardDetection() {
+            cardDetectionCanvas = document.createElement('canvas');
+            cardDetectionCtx = cardDetectionCanvas.getContext('2d', { willReadFrequently: true });
+        }
+        
+        function toggleAutoScan() {
+            autoScanEnabled = !autoScanEnabled;
+            const btn = document.getElementById('autoScanBtn');
+            const statusIndicator = document.getElementById('autoScanStatus');
+            
+            if (autoScanEnabled) {
+                btn.classList.add('active');
+                btn.innerHTML = '⏸️';
+                btn.title = 'Stop Auto-Scan';
+                statusIndicator.classList.add('active');
+                statusIndicator.textContent = 'Auto-Scan ON';
+                startAutoScanLoop();
+                // Resume audio context if suspended (browser policy)
+                if (audioContext.state === 'suspended') {
+                    audioContext.resume();
+                }
+                showToast('🔄 Auto-scan enabled - place cards in frame', 'success');
+            } else {
+                btn.classList.remove('active');
+                btn.innerHTML = '▶️';
+                btn.title = 'Start Auto-Scan';
+                statusIndicator.classList.remove('active');
+                statusIndicator.textContent = 'Auto-Scan OFF';
+                stopAutoScanLoop();
+                showToast('⏹️ Auto-scan disabled', 'info');
+            }
+        }
+        
+        function startAutoScanLoop() {
+            if (autoScanInterval) return;
+            
+            initCardDetection();
+            autoScanInterval = setInterval(() => {
+                if (!cameraStream || isScanning || !autoScanEnabled) return;
+                analyzeFrame();
+            }, 100); // Check 10 times per second
+        }
+        
+        function stopAutoScanLoop() {
+            if (autoScanInterval) {
+                clearInterval(autoScanInterval);
+                autoScanInterval = null;
+            }
+            previousFrameData = null;
+            stableFrameCount = 0;
+        }
+        
+        function analyzeFrame() {
+            if (!cameraPreview.videoWidth || !cameraPreview.videoHeight) return;
+            
+            // Set canvas size to a smaller analysis size for performance
+            const analysisWidth = 160;
+            const analysisHeight = 120;
+            cardDetectionCanvas.width = analysisWidth;
+            cardDetectionCanvas.height = analysisHeight;
+            
+            // Draw current frame
+            cardDetectionCtx.drawImage(cameraPreview, 0, 0, analysisWidth, analysisHeight);
+            const currentFrameData = cardDetectionCtx.getImageData(0, 0, analysisWidth, analysisHeight);
+            
+            // Check if card-like object is in frame (center region analysis)
+            const hasCardInFrame = detectCardInFrame(currentFrameData);
+            
+            if (!hasCardInFrame) {
+                stableFrameCount = 0;
+                previousFrameData = null;
+                updateAutoScanStatus('waiting');
+                return;
+            }
+            
+            // Check frame stability (card not moving)
+            if (previousFrameData) {
+                const frameDiff = calculateFrameDifference(previousFrameData, currentFrameData);
+                
+                if (frameDiff < 5) { // Frame is stable (less than 5% change)
+                    stableFrameCount++;
+                    updateAutoScanStatus('stabilizing', stableFrameCount);
+                    
+                    // Check cooldown
+                    const timeSinceLastScan = Date.now() - lastScanTime;
+                    if (timeSinceLastScan < scanCooldown) {
+                        updateAutoScanStatus('cooldown', Math.ceil((scanCooldown - timeSinceLastScan) / 1000));
+                        return;
+                    }
+                    
+                    // If stable enough, trigger scan
+                    if (stableFrameCount >= stabilityThreshold) {
+                        stableFrameCount = 0;
+                        triggerAutoScan();
+                    }
+                } else {
+                    stableFrameCount = 0;
+                    updateAutoScanStatus('moving');
+                }
+            }
+            
+            previousFrameData = currentFrameData;
+        }
+        
+        function detectCardInFrame(imageData) {
+            // Analyze the center region of the frame for card-like characteristics
+            // Cards have distinct edges and contrast against background
+            const data = imageData.data;
+            const width = imageData.width;
+            const height = imageData.height;
+            
+            // Define center region (where card should be)
+            const centerX = Math.floor(width * 0.3);
+            const centerY = Math.floor(height * 0.2);
+            const centerW = Math.floor(width * 0.4);
+            const centerH = Math.floor(height * 0.6);
+            
+            let edgePixels = 0;
+            let totalPixels = 0;
+            let avgBrightness = 0;
+            
+            // Simple edge detection in center region
+            for (let y = centerY; y < centerY + centerH - 1; y++) {
+                for (let x = centerX; x < centerX + centerW - 1; x++) {
+                    const idx = (y * width + x) * 4;
+                    const idxRight = (y * width + x + 1) * 4;
+                    const idxDown = ((y + 1) * width + x) * 4;
+                    
+                    const gray = (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
+                    const grayRight = (data[idxRight] + data[idxRight + 1] + data[idxRight + 2]) / 3;
+                    const grayDown = (data[idxDown] + data[idxDown + 1] + data[idxDown + 2]) / 3;
+                    
+                    avgBrightness += gray;
+                    totalPixels++;
+                    
+                    // Check for edge (significant brightness change)
+                    if (Math.abs(gray - grayRight) > 30 || Math.abs(gray - grayDown) > 30) {
+                        edgePixels++;
+                    }
+                }
+            }
+            
+            avgBrightness /= totalPixels;
+            const edgeRatio = edgePixels / totalPixels;
+            
+            // Card should have some edges (text, art) but not too many (noise)
+            // and reasonable brightness (not too dark)
+            const hasCard = edgeRatio > 0.02 && edgeRatio < 0.4 && avgBrightness > 40;
+            
+            return hasCard;
+        }
+        
+        function calculateFrameDifference(frame1, frame2) {
+            const data1 = frame1.data;
+            const data2 = frame2.data;
+            let diff = 0;
+            
+            // Sample every 4th pixel for performance
+            for (let i = 0; i < data1.length; i += 16) {
+                diff += Math.abs(data1[i] - data2[i]); // Red channel only
+            }
+            
+            return (diff / (data1.length / 16)) / 255 * 100; // Return as percentage
+        }
+        
+        function updateAutoScanStatus(status, value) {
+            const statusEl = document.getElementById('autoScanStatus');
+            const cardFrame = document.querySelector('.card-frame');
+            
+            // Reset classes
+            statusEl.className = 'auto-scan-indicator active';
+            cardFrame.className = 'card-frame';
+            
+            switch(status) {
+                case 'waiting':
+                    statusEl.innerHTML = '<span class="icon">👁️</span> Waiting for card...';
+                    statusEl.classList.add('status-waiting');
+                    cardFrame.classList.add('active-waiting');
+                    break;
+                case 'moving':
+                    statusEl.innerHTML = '<span class="icon">✋</span> Hold steady...';
+                    statusEl.classList.add('status-waiting'); // Use waiting style for moving
+                    cardFrame.classList.add('active-waiting');
+                    break;
+                case 'stabilizing':
+                    statusEl.innerHTML = `<span class="icon">🎯</span> Stabilizing... ${value}/${stabilityThreshold}`;
+                    statusEl.classList.add('status-stabilizing');
+                    cardFrame.classList.add('active-stabilizing');
+                    break;
+                case 'cooldown':
+                    statusEl.innerHTML = `<span class="icon">⏳</span> Next in ${value}s`;
+                    statusEl.classList.add('status-cooldown');
+                    cardFrame.classList.add('active-cooldown');
+                    break;
+                case 'scanning':
+                    statusEl.innerHTML = '<span class="icon">📸</span> SCANNING!';
+                    statusEl.classList.add('status-scanning');
+                    cardFrame.classList.add('active-scanning');
+                    break;
+            }
+        }
+        
+        async function triggerAutoScan() {
+            if (isScanning) return;
+            
+            updateAutoScanStatus('scanning');
+            playBeep('detecting');
+            
+            // Capture and scan
+            isScanning = true;
+            scanningOverlay.classList.add('active');
+            
+            const canvas = document.createElement('canvas');
+            canvas.width = cameraPreview.videoWidth;
+            canvas.height = cameraPreview.videoHeight;
+            canvas.getContext('2d').drawImage(cameraPreview, 0, 0);
+            
+            canvas.toBlob(async (blob) => {
+                const result = await scanCardImageAuto(blob);
+                
+                isScanning = false;
+                scanningOverlay.classList.remove('active');
+                lastScanTime = Date.now();
+                
+                if (result && result.success) {
+                    playBeep('success');
+                    // Flash green border
+                    const cardFrame = document.querySelector('.card-frame');
+                    cardFrame.style.borderColor = '#00ff00';
+                    cardFrame.style.boxShadow = '0 0 30px rgba(0, 255, 0, 0.5), 0 0 0 9999px rgba(0, 0, 0, 0.5)';
+                    setTimeout(() => {
+                        cardFrame.style.borderColor = 'rgba(0, 208, 132, 0.8)';
+                        cardFrame.style.boxShadow = '0 0 0 9999px rgba(0, 0, 0, 0.5)';
+                    }, 500);
+                } else {
+                    playBeep('error');
+                }
+            }, 'image/jpeg', 0.92);
+        }
+        
+        async function scanCardImageAuto(blob) {
+            const isFoil = document.getElementById('isFoil').checked;
+            const formData = new FormData();
+            formData.append('file', blob, 'capture.jpg');
+            formData.append('tcg', 'mtg');
+            formData.append('is_foil', isFoil);
+            
+            try {
+                const response = await fetch('/api/scan/upload', { method: 'POST', body: formData });
+                const result = await response.json();
+                
+                if (result.success) {
+                    scanCount++;
+                    updateScanCounter();
+                    showToast('✅ ' + result.card.name + ' (' + Math.round(result.confidence * 100) + '%)', 'success');
+                    addToRecentScans(result);
+                    return result;
+                } else {
+                    // In auto mode, don't show error for every failed scan
+                    // Just log it and continue
+                    console.log('Auto-scan: Card not recognized', result);
+                    return result;
+                }
+            } catch (error) {
+                console.error('Auto-scan error:', error);
+                return null;
+            }
+        }
 
         const searchInput = document.getElementById('searchInput');
         const searchBtn = document.getElementById('searchBtn');
@@ -995,7 +1452,19 @@
             }
         }
 
-        function stopCamera() { if (cameraStream) { cameraStream.getTracks().forEach(track => track.stop()); cameraStream = null; } cameraPreview.srcObject = null; statusDot.classList.remove('active'); statusText.textContent = 'Camera off'; captureBtn.disabled = true; }
+        function stopCamera() { 
+            if (autoScanEnabled) {
+                toggleAutoScan(); // Stop auto-scan when camera stops
+            }
+            if (cameraStream) { 
+                cameraStream.getTracks().forEach(track => track.stop()); 
+                cameraStream = null; 
+            } 
+            cameraPreview.srcObject = null; 
+            statusDot.classList.remove('active'); 
+            statusText.textContent = 'Camera off'; 
+            captureBtn.disabled = true; 
+        }
 
         async function switchCamera() { currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment'; stopCamera(); await startCamera(); showToast('Switched to ' + (currentFacingMode === 'environment' ? 'back' : 'front') + ' camera', 'success'); }
 
@@ -1040,7 +1509,17 @@
 
         async function handleUploadedFiles(files) { for (const file of files) { if (!file.type.startsWith('image/')) continue; showToast('Scanning ' + file.name + '...', 'info'); await scanCardImage(file); } fileInput.value = ''; }
 
-        function addToRecentScans(result) { scanResults.unshift(result); if (scanResults.length > 10) scanResults.pop(); displayRecentScans(); recentScans.style.display = 'block'; }
+        function addToRecentScans(result) { 
+            scanResults.unshift(result); 
+            if (scanResults.length > 20) scanResults.pop(); // Keep more history
+            displayRecentScans(); 
+            recentScans.style.display = 'block'; 
+            
+            // Scroll to recent scans if not visible
+            if (scanCount === 1) {
+                recentScans.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }
 
         function displayRecentScans() {
             resultsContainer.innerHTML = scanResults.map(result => {

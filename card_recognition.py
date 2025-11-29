@@ -62,6 +62,121 @@ except ImportError:
 # Initialize logger for this module
 logger = get_logger('recognition')
 
+# Cache for known set codes loaded from database
+_known_sets_cache = None
+_known_sets_cache_time = None
+SETS_CACHE_TTL = 3600  # Refresh every hour
+
+def load_known_sets_from_db():
+    """
+    Load all unique set codes from the database.
+    Uses a cache to avoid querying the database on every scan.
+    """
+    global _known_sets_cache, _known_sets_cache_time
+    import time
+    
+    # Check if cache is valid
+    current_time = time.time()
+    if _known_sets_cache is not None and _known_sets_cache_time is not None:
+        if current_time - _known_sets_cache_time < SETS_CACHE_TTL:
+            return _known_sets_cache
+    
+    # Load from database
+    try:
+        from sqlalchemy import text
+        db = get_db()
+        result = db.execute(text('SELECT DISTINCT set_code FROM cards WHERE set_code IS NOT NULL')).fetchall()
+        db.close()
+        
+        # Convert to uppercase set for fast lookup
+        sets_from_db = {row[0].upper() for row in result if row[0]}
+        
+        logger.info(f"Loaded {len(sets_from_db)} set codes from database")
+        
+        # Update cache
+        _known_sets_cache = sets_from_db
+        _known_sets_cache_time = current_time
+        
+        return sets_from_db
+    except Exception as e:
+        logger.warning(f"Could not load sets from database: {e}")
+        # Return fallback hardcoded sets if database fails
+        return _get_fallback_sets()
+
+def _get_fallback_sets():
+    """Fallback set codes in case database is unavailable"""
+    return {
+        'FIN', 'MKM', 'WOE', 'LCI', 'MOM', 'ONE', 'BRO', 'DMU', 'SNC', 'NEO',
+        'VOW', 'MID', 'AFR', 'STX', 'KHM', 'ZNR', 'IKO', 'THB', 'ELD', 'WAR',
+        'RNA', 'GRN', 'DOM', 'RIX', 'XLN', 'HOU', 'AKH', 'AER', 'KLD', 'EMN',
+        'SOI', 'OGW', 'BFZ', 'DTK', 'FRF', 'KTK', 'M21', 'M20', 'M19', 'M15',
+        'DSK', 'BLB', 'OTJ', 'MKC', 'CLU', 'PIP', 'ACR', 'WHO', 'LTR', 'CMM',
+        'WOT', '2X2', 'CLB', 'NCC', 'SLD', 'J22', 'UNF', 'DMC', 'MUL', 'BRC',
+        'BOT', 'BRR', 'ONC', 'MAT', 'LCC', 'RVR', 'SPG', 'PIO',
+        'FDN', 'DSC', 'MH3', 'MH2', 'MH1', '40K', 'REX', '30A',
+        'SPM', 'PSPM', 'TSPM', 'OM1', 'TLA', 'JTLA'
+    }
+
+def refresh_known_sets_cache():
+    """Force refresh the known sets cache. Call after importing new sets."""
+    global _known_sets_cache, _known_sets_cache_time
+    _known_sets_cache = None
+    _known_sets_cache_time = None
+    logger.info("Known sets cache cleared - will reload on next scan")
+
+# Ambiguous set codes that are also common English words or OCR errors
+# These require additional context (number nearby, separator like · or -) to be valid
+AMBIGUOUS_SET_CODES = {
+    'ALL',  # Alliances - but also English word
+    'ONE',  # Phyrexia: All Will Be One - but also English word
+    'WAR',  # War of the Spark - but also English word
+    'WHO',  # Doctor Who - but also English word
+    'ACE',  # Not a real set but OCR might read it
+    'ICE',  # Ice Age - but also English word
+    'ARC',  # Archenemy - but common in card text
+    'ERA',  # Not a real set but common word
+    'THE',  # Common word
+    'AND',  # Common word
+    'FOR',  # Common word
+    'END',  # Not a set but common word
+    'SOI',  # Shadows over Innistrad - can be misread
+    'SOM',  # Scars of Mirrodin - can be misread  
+    'ATH',  # Anthologies - very old, unlikely to scan
+    'EVE',  # Eventide - but also common word
+    'ROE',  # Rise of the Eldrazi - but also a word
+}
+
+def is_valid_set_code_in_context(set_code: str, text: str, collector_number: str = None) -> bool:
+    """
+    Validate if a set code is valid in the given context.
+    Ambiguous set codes require additional context like a collector number nearby
+    or a separator character (· or -).
+    """
+    set_upper = set_code.upper()
+    
+    # Non-ambiguous set codes are always valid
+    if set_upper not in AMBIGUOUS_SET_CODES:
+        return True
+    
+    # For ambiguous codes, require additional context:
+    # 1. Collector number was also found
+    if collector_number:
+        return True
+    
+    # 2. Set code appears with separator (e.g., "ATH · EN", "ARC - EN")
+    separator_pattern = rf'{set_upper}\s*[·\-]\s*[A-Z]{{2}}'
+    if re.search(separator_pattern, text):
+        return True
+    
+    # 3. Set code appears right after a number (e.g., "25 MOM", "168 WOE")
+    number_before_pattern = rf'\d{{2,4}}\s*{set_upper}\b'
+    if re.search(number_before_pattern, text):
+        return True
+    
+    # Ambiguous code without context - reject it
+    logger.debug(f"Rejecting ambiguous set code '{set_upper}' - no supporting context")
+    return False
+
 class CardRecognitionEngine:
     """Main card recognition engine using OCR and API search"""
     
@@ -299,19 +414,8 @@ class CardRecognitionEngine:
         debug_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads', 'debug')
         os.makedirs(debug_dir, exist_ok=True)
         
-        # Known MTG set codes (most common/recent ones)
-        known_sets = {
-            'FIN', 'MKM', 'WOE', 'LCI', 'MOM', 'ONE', 'BRO', 'DMU', 'SNC', 'NEO',
-            'VOW', 'MID', 'AFR', 'STX', 'KHM', 'ZNR', 'IKO', 'THB', 'ELD', 'WAR',
-            'RNA', 'GRN', 'DOM', 'RIX', 'XLN', 'HOU', 'AKH', 'AER', 'KLD', 'EMN',
-            'SOI', 'OGW', 'BFZ', 'DTK', 'FRF', 'KTK', 'M21', 'M20', 'M19', 'M15',
-            'DSK', 'BLB', 'OTJ', 'MKC', 'CLU', 'PIP', 'ACR', 'WHO', 'LTR', 'CMM',
-            'WOT', '2X2', 'CLB', 'NCC', 'SLD', 'J22', 'UNF', 'DMC', 'MUL', 'BRC',
-            'BOT', 'BRR', 'ONC', 'MOM', 'MAT', 'MUL', 'LCC', 'RVR', 'SPG', 'PIO',
-            'FDN', 'DSC', 'MH3', 'MH2', 'MH1', '40K', 'REX', '30A',
-            # Spider-Man and Marvel sets
-            'SPM', 'PSPM', 'TSPM', 'OM1'
-        }
+        # Load known set codes from database (with cache)
+        known_sets = load_known_sets_from_db()
         
         best_result = {'set_code': None, 'collector_number': None}
         
@@ -402,8 +506,12 @@ class CardRecognitionEngine:
                             set_pattern = rf'\b{set_code}\b|{set_code}\s*[·\-]'
                             if re.search(set_pattern, text):
                                 if not best_result['set_code']:
-                                    best_result['set_code'] = set_code.lower()
-                                    logger.info(f"Found set code: {set_code}")
+                                    # Validate ambiguous set codes require context
+                                    if is_valid_set_code_in_context(set_code, text, best_result.get('collector_number')):
+                                        best_result['set_code'] = set_code.lower()
+                                        logger.info(f"Found set code: {set_code}")
+                                    else:
+                                        logger.debug(f"Skipping ambiguous set code: {set_code}")
                         
                         # Pattern 3: Look for collector number patterns
                         # Require at least 2 digits to avoid false positives from single digits
@@ -455,19 +563,8 @@ class CardRecognitionEngine:
         debug_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads', 'debug')
         os.makedirs(debug_dir, exist_ok=True)
         
-        # Known MTG set codes
-        known_sets = {
-            'FIN', 'MKM', 'WOE', 'LCI', 'MOM', 'ONE', 'BRO', 'DMU', 'SNC', 'NEO',
-            'VOW', 'MID', 'AFR', 'STX', 'KHM', 'ZNR', 'IKO', 'THB', 'ELD', 'WAR',
-            'RNA', 'GRN', 'DOM', 'RIX', 'XLN', 'HOU', 'AKH', 'AER', 'KLD', 'EMN',
-            'SOI', 'OGW', 'BFZ', 'DTK', 'FRF', 'KTK', 'M21', 'M20', 'M19', 'M15',
-            'DSK', 'BLB', 'OTJ', 'MKC', 'CLU', 'PIP', 'ACR', 'WHO', 'LTR', 'CMM',
-            'WOT', '2X2', 'CLB', 'NCC', 'SLD', 'J22', 'UNF', 'DMC', 'MUL', 'BRC',
-            'BOT', 'BRR', 'ONC', 'MOM', 'MAT', 'MUL', 'LCC', 'RVR', 'SPG', 'PIO',
-            'FDN', 'DSC', 'MH3', 'MH2', 'MH1', '40K', 'REX', '30A',
-            # Spider-Man and Marvel sets
-            'SPM', 'PSPM', 'TSPM', 'OM1'
-        }
+        # Load known set codes from database (with cache)
+        known_sets = load_known_sets_from_db()
         
         best_result = {'set_code': None, 'collector_number': None}
         
@@ -537,9 +634,13 @@ class CardRecognitionEngine:
                     if not best_result['set_code']:
                         for set_code in known_sets:
                             if set_code in text:
-                                best_result['set_code'] = set_code.lower()
-                                logger.info(f"Found set code from original: {set_code}")
-                                break
+                                # Validate ambiguous set codes require context
+                                if is_valid_set_code_in_context(set_code, text, best_result.get('collector_number')):
+                                    best_result['set_code'] = set_code.lower()
+                                    logger.info(f"Found set code from original: {set_code}")
+                                    break
+                                else:
+                                    logger.debug(f"Skipping ambiguous set code from original: {set_code}")
                     
                     # If we found both, save debug and return
                     if best_result['set_code'] and best_result['collector_number']:
@@ -1031,11 +1132,19 @@ class CardRecognitionEngine:
                             logger.info("Set info incomplete in processed image, trying original photo...")
                             set_info_original = self.extract_set_info_from_original(original_img)
                             
-                            # Merge results - prefer original if it has more info
-                            if set_info_original.get('set_code') and not set_info.get('set_code'):
+                            # IMPORTANT: If original has BOTH set_code AND collector_number, use both together
+                            # because they are found from the same image and are consistent with each other.
+                            # Don't mix set_code from one source with collector_number from another!
+                            if set_info_original.get('set_code') and set_info_original.get('collector_number'):
+                                logger.info(f"Original has complete set info, using both: set={set_info_original['set_code']}, num={set_info_original['collector_number']}")
                                 set_info['set_code'] = set_info_original['set_code']
-                            if set_info_original.get('collector_number') and not set_info.get('collector_number'):
                                 set_info['collector_number'] = set_info_original['collector_number']
+                            else:
+                                # Only merge individual pieces if original doesn't have complete info
+                                if set_info_original.get('set_code') and not set_info.get('set_code'):
+                                    set_info['set_code'] = set_info_original['set_code']
+                                if set_info_original.get('collector_number') and not set_info.get('collector_number'):
+                                    set_info['collector_number'] = set_info_original['collector_number']
                             
                             logger.info(f"Set info after original scan: set_code={set_info.get('set_code')}, collector_number={set_info.get('collector_number')}")
                         
